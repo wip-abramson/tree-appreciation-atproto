@@ -1,17 +1,40 @@
 body {
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Source Serif 4', Georgia, 'Times New Roman', serif;
 
+  /* Green palette */
+  --green-100: #e8f0e4;
+  --green-200: #c5dabb;
+  --green-300: #8fbc7e;
+  --green-400: #5a9e4a;
+  --green-500: #3a7d2a;
+  --green-600: #265c1a;
+
+  /* Bark / earth tones */
+  --bark-100: #f2ece6;
+  --bark-200: #e0d5c8;
+  --bark-300: #c4b29e;
+  --bark-400: #9e8a72;
+  --bark-500: #6e5c46;
+  --bark-600: #4a3c2e;
+
+  /* Page */
+  --page-bg: #f7f5f2;
+
+  /* Aliases for existing components (home, login, seed-tree) */
   --border-color: #ddd;
   --gray-100: #fafafa;
   --gray-500: #666;
   --gray-700: #333;
-  --primary-100: #d2e7ff;
-  --primary-200: #b1d3fa;
-  --primary-400: #2e8fff;
-  --primary-500: #0078ff;
-  --primary-600: #0066db;
-  --error-500: #f00;
-  --error-100: #fee;
+  --primary-100: var(--green-100);
+  --primary-200: var(--green-200);
+  --primary-400: var(--green-400);
+  --primary-500: var(--green-500);
+  --primary-600: var(--green-600);
+  --error-500: #c53030;
+  --error-100: #fff5f5;
+
+  background-color: var(--page-bg);
+  color: var(--gray-700);
 }
 
 /*
@@ -66,11 +89,13 @@ button,
   display: inline-block;
   border: 0;
   background-color: var(--primary-500);
-  border-radius: 50px;
+  border-radius: 6px;
   color: #fff;
-  padding: 2px 10px;
+  padding: 6px 16px;
   cursor: pointer;
   text-decoration: none;
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-weight: 600;
 }
 button:hover,
 .button:hover {
@@ -98,7 +123,15 @@ button:hover,
 }
 
 #header h1 {
-  font-size: 5rem;
+  font-family: 'Newsreader', Georgia, serif;
+  font-size: 2.8rem;
+  color: var(--primary-600);
+  font-weight: 400;
+  font-style: italic;
+}
+
+#header a {
+  color: var(--primary-500);
 }
 
 .container {
@@ -111,7 +144,6 @@ button:hover,
 }
 
 .card {
-  /* border: 1px solid var(--border-color); */
   border-radius: 6px;
   padding: 10px 16px;
   background-color: #fff;
@@ -145,87 +177,685 @@ button:hover,
   border: 0;
 }
 
-.status-options {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 10px 0;
-}
-
-.status-option {
-  font-size: 2rem;
-  width: 3rem;
-  height: 3rem;
-  padding: 0;
-  background-color: #fff;
-  border: 1px solid var(--border-color);
-  border-radius: 3rem;
-  text-align: center;
-  box-shadow: 0 1px 4px #0001;
-  cursor: pointer;
-}
-
-.status-option:hover {
-  background-color: var(--primary-100);
-  box-shadow: 0 0 0 1px var(--primary-400);
-}
-
-.status-option.selected {
-  box-shadow: 0 0 0 1px var(--primary-500);
-  background-color: var(--primary-100);
-}
-
-.status-option.selected:hover {
-  background-color: var(--primary-200);
-}
-
-.status-line {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
-  position: relative;
-  margin-top: 15px;
-}
-
-.status-line:not(.no-line)::before {
-  content: '';
-  position: absolute;
-  width: 2px;
-  background-color: var(--border-color);
-  left: 1.45rem;
-  bottom: calc(100% + 2px);
-  height: 15px;
-}
-
-.status-line .status {
-  font-size: 2rem;
-  background-color: #fff;
-  width: 3rem;
-  height: 3rem;
-  border-radius: 1.5rem;
-  text-align: center;
-  border: 1px solid var(--border-color);
-}
-
-.status-line .desc {
-  color: var(--gray-500);
-}
-
-.status-line .author {
-  color: var(--gray-700);
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.status-line .author:hover {
-  text-decoration: underline;
-}
-
 .signup-cta {
   text-align: center;
   width: 100%;
   display: block;
   margin-top: 1rem;
+}
+
+/* Tree form */
+.tree-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.tree-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.9rem;
+  color: var(--gray-500);
+}
+
+.tree-form input,
+.tree-form textarea {
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 1rem;
+  color: var(--gray-700);
+}
+
+.tree-form-row {
+  display: flex;
+  gap: 10px;
+}
+
+.tree-form-row label {
+  flex: 1;
+}
+
+.form-hint {
+  font-size: 0.8rem;
+  color: var(--gray-500);
+  font-style: italic;
+  margin-top: -4px;
+}
+
+/* Tree cards */
+.section-title {
+  margin-top: 16px;
+  margin-bottom: 4px;
+  color: var(--gray-700);
+  font-family: 'Newsreader', Georgia, serif;
+  font-weight: 400;
+}
+
+.empty-state {
+  color: var(--gray-500);
+  font-style: italic;
+  padding: 10px 0;
+}
+
+.seed-cta {
+  display: block;
+  text-align: center;
+  background-color: var(--primary-500);
+  color: #fff;
+  text-decoration: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.seed-cta:hover {
+  background-color: var(--primary-400);
+}
+
+.tree-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.tree-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: #fff;
+  text-decoration: none;
+  color: inherit;
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.tree-card:hover {
+  border-color: var(--primary-400);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.tree-card-image {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.tree-card-placeholder {
+  background-color: var(--gray-100);
+  color: var(--gray-500);
+  text-align: center;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-style: italic;
+  font-size: 0.9rem;
+}
+
+.tree-card-body {
+  padding: 8px 10px 10px;
+}
+
+.tree-name {
+  color: var(--gray-700);
+  font-size: 0.95rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tree-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.tree-author {
+  color: var(--gray-500);
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.tree-rings-badge {
+  background-color: var(--primary-100);
+  color: var(--primary-600);
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+@media (max-width: 480px) {
+  .tree-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+}
+
+/* ============================================
+   Tree Detail Page — 4-zone layout
+   ============================================ */
+
+.tree-detail-header {
+  background-color: #fff;
+  text-align: center;
+  padding: 0.75rem 0;
+}
+
+.tree-detail-header h1 {
+  font-family: 'Newsreader', Georgia, serif;
+  font-size: 1.5rem;
+  color: var(--primary-600);
+  font-weight: 400;
+  font-style: italic;
+}
+
+.tree-detail-header h1 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.tree-detail-header h1 a:hover {
+  text-decoration: underline;
+}
+
+/* Zone 1: Hero */
+.tree-hero {
+  position: relative;
+  width: 100%;
+  max-height: 70vh;
+  overflow: hidden;
+  background-color: var(--green-600);
+}
+
+.tree-hero img {
+  width: 100%;
+  height: 100%;
+  max-height: 70vh;
+  object-fit: cover;
+  display: block;
+}
+
+.tree-hero-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 3rem 1.5rem 1.5rem;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.65));
+}
+
+.tree-hero-name {
+  font-family: 'Newsreader', Georgia, serif;
+  color: #fff;
+  font-size: 2.4rem;
+  font-weight: 400;
+  line-height: 1.15;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* No-image hero fallback */
+.tree-hero--no-image {
+  padding: 3rem 1.5rem 2rem;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 180px;
+}
+
+.tree-hero--no-image .tree-hero-name {
+  text-align: center;
+}
+
+/* Zone 2: Presence info */
+.tree-presence {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 1.5rem 20px 1rem;
+}
+
+.tree-presence-description {
+  font-size: 1.1rem;
+  line-height: 1.65;
+  color: var(--bark-600);
+}
+
+.tree-presence-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--bark-200);
+}
+
+.tree-meta-item {
+  font-family: 'DM Mono', 'Courier New', monospace;
+  font-size: 0.78rem;
+  color: var(--bark-400);
+  letter-spacing: 0.02em;
+}
+
+.tree-meta-item a {
+  color: var(--green-500);
+  text-decoration: none;
+}
+
+.tree-meta-item a:hover {
+  text-decoration: underline;
+}
+
+/* Zone 3: Inscription form */
+.inscription-zone {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.inscription-form-wrapper {
+  border: 2px dashed var(--bark-300);
+  border-radius: 8px;
+  padding: 1.25rem 1.25rem 1rem;
+  background-color: rgba(255, 255, 255, 0.5);
+}
+
+.inscription-form-wrapper h3 {
+  font-family: 'Newsreader', Georgia, serif;
+  font-weight: 400;
+  font-size: 1.15rem;
+  color: var(--bark-500);
+  margin-bottom: 0.75rem;
+}
+
+.inscription-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inscription-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.9rem;
+  color: var(--gray-500);
+}
+
+.inscription-form textarea {
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 1rem;
+  color: var(--gray-700);
+}
+
+.inscription-login-prompt {
+  text-align: center;
+  padding: 0.5rem 0;
+  color: var(--bark-400);
+  font-style: italic;
+}
+
+.inscription-login-prompt a {
+  color: var(--green-500);
+  font-style: normal;
+  font-weight: 600;
+}
+
+/* Zone 4: Memory rings */
+.rings-section {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 1.5rem 20px 3rem;
+}
+
+.rings-header {
+  font-family: 'Newsreader', Georgia, serif;
+  font-weight: 400;
+  font-size: 1.3rem;
+  color: var(--bark-600);
+  margin-bottom: 1rem;
+}
+
+.rings-header span {
+  font-family: 'DM Mono', 'Courier New', monospace;
+  font-size: 0.85rem;
+  color: var(--bark-400);
+  font-weight: 400;
+}
+
+.rings-trunk {
+  position: relative;
+  padding-left: 52px;
+}
+
+.rings-trunk::before {
+  content: '';
+  position: absolute;
+  left: 33px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background-color: var(--green-200);
+  border-radius: 2px;
+}
+
+/* Individual ring marker */
+.ring-marker {
+  position: relative;
+  padding: 0 0 1.75rem 20px;
+}
+
+.ring-marker:last-child {
+  padding-bottom: 0;
+}
+
+/* Concentric circle marker */
+.ring-marker::before {
+  content: '';
+  position: absolute;
+  left: -32px;
+  top: 4px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid var(--bark-300);
+  background-color: var(--page-bg);
+}
+
+.ring-marker::after {
+  content: '';
+  position: absolute;
+  left: -23px;
+  top: 13px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--green-500);
+}
+
+/* Newest ring: larger with glow */
+.ring--newest::before {
+  width: 32px;
+  height: 32px;
+  left: -35px;
+  top: 1px;
+  border-color: var(--green-400);
+  box-shadow: 0 0 8px rgba(58, 125, 42, 0.25);
+}
+
+.ring--newest::after {
+  width: 10px;
+  height: 10px;
+  left: -24px;
+  top: 12px;
+  background-color: var(--green-400);
+}
+
+/* Temporal depth */
+.ring--old {
+  opacity: 0.7;
+}
+
+.ring--old .ring-image {
+  filter: saturate(0.7);
+}
+
+.ring--mid {
+  opacity: 0.85;
+}
+
+.ring--recent {
+  opacity: 1;
+}
+
+/* Ring content */
+.ring-image {
+  width: 100%;
+  max-height: 360px;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  transition: width 0.15s ease, max-height 0.15s ease;
+}
+
+.ring-image--portrait {
+  width: 60%;
+  max-height: 420px;
+  margin-left: auto;
+  margin-right: auto;
+  border-radius: 4px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.1);
+}
+
+.ring-image--landscape {
+  max-height: 360px;
+}
+
+.ring-text {
+  color: var(--bark-600);
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+/* Text-only inscription accent */
+.ring-text-only .ring-text {
+  border-left: 3px solid var(--green-200);
+  padding-left: 12px;
+  font-style: italic;
+}
+
+.ring-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 0.8rem;
+}
+
+.ring-author {
+  color: var(--green-500);
+  text-decoration: none;
+}
+
+.ring-author:hover {
+  text-decoration: underline;
+}
+
+.ring-you {
+  background-color: var(--green-100);
+  color: var(--green-600);
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.ring-date {
+  font-family: 'DM Mono', 'Courier New', monospace;
+  font-size: 0.75rem;
+  color: var(--bark-400);
+}
+
+/* Empty state trunk stub */
+.rings-empty {
+  position: relative;
+  padding-left: 52px;
+  min-height: 60px;
+}
+
+.rings-empty::before {
+  content: '';
+  position: absolute;
+  left: 33px;
+  top: 0;
+  height: 60px;
+  width: 3px;
+  background-color: var(--green-200);
+  border-radius: 2px;
+}
+
+.rings-empty-marker {
+  position: relative;
+  padding-left: 20px;
+  padding-top: 14px;
+}
+
+.rings-empty-marker::before {
+  content: '';
+  position: absolute;
+  left: -32px;
+  top: 18px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px dashed var(--bark-300);
+  background-color: var(--page-bg);
+}
+
+.rings-empty-text {
+  color: var(--bark-400);
+  font-style: italic;
+  font-size: 0.95rem;
+}
+
+/* Collapsible older rings */
+.rings-older-toggle {
+  margin-bottom: 1rem;
+}
+
+.rings-older-toggle summary {
+  font-family: 'DM Mono', 'Courier New', monospace;
+  font-size: 0.8rem;
+  color: var(--bark-400);
+  cursor: pointer;
+  padding: 6px 0;
+  list-style: none;
+}
+
+.rings-older-toggle summary::-webkit-details-marker {
+  display: none;
+}
+
+.rings-older-toggle summary::before {
+  content: '\25b6\00a0';
+  font-size: 0.7rem;
+}
+
+.rings-older-toggle[open] summary::before {
+  content: '\25bc\00a0';
+}
+
+/* Image preview on inscription form */
+#inscription-preview {
+  display: none;
+  width: 100%;
+  max-height: 300px;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-top: 4px;
+}
+
+/* Image preview on seed form */
+#image-preview {
+  display: none;
+  width: 100%;
+  max-height: 300px;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-top: 4px;
+}
+
+/* GPS feedback */
+.gps-feedback {
+  font-size: 0.85rem;
+  padding: 4px 0;
+}
+
+.gps-found {
+  color: var(--primary-500);
+  font-weight: 600;
+}
+
+.gps-not-found {
+  color: var(--gray-500);
+  font-style: italic;
+}
+
+/* Datetime feedback */
+.datetime-feedback {
+  font-size: 0.85rem;
+  padding: 4px 0;
+  color: var(--primary-500);
+  font-weight: 600;
+}
+
+/* ============================================
+   Responsive
+   ============================================ */
+
+@media (max-width: 480px) {
+  .tree-hero-name {
+    font-size: 1.8rem;
+  }
+
+  .tree-presence-meta {
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .rings-trunk {
+    padding-left: 44px;
+  }
+
+  .rings-trunk::before {
+    left: 25px;
+  }
+
+  .ring-marker::before {
+    left: -32px;
+  }
+
+  .ring-marker::after {
+    left: -23px;
+  }
+
+  .ring--newest::before {
+    left: -35px;
+  }
+
+  .ring--newest::after {
+    left: -24px;
+  }
+
+  .rings-empty {
+    padding-left: 44px;
+  }
+
+  .rings-empty::before {
+    left: 25px;
+  }
+
+  .rings-empty-marker::before {
+    left: -32px;
+  }
+
+  .ring-image--portrait {
+    width: 75%;
+  }
 }

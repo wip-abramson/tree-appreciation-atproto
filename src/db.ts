@@ -1,3 +1,5 @@
+import { mkdirSync } from 'node:fs'
+import { dirname } from 'node:path'
 import SqliteDb from 'better-sqlite3'
 import {
   Kysely,
@@ -5,20 +7,38 @@ import {
   SqliteDialect,
   Migration,
   MigrationProvider,
+  sql,
 } from 'kysely'
 
 // Types
 
 export type DatabaseSchema = {
-  status: Status
+  tree: Tree
+  inscription: Inscription
   auth_session: AuthSession
   auth_state: AuthState
 }
 
-export type Status = {
+export type Tree = {
   uri: string
   authorDid: string
-  status: string
+  name: string
+  slug: string
+  description: string | null
+  imageCid: string | null
+  latitude: string
+  longitude: string
+  createdAt: string
+  indexedAt: string
+}
+
+export type Inscription = {
+  uri: string
+  authorDid: string
+  tree: string
+  text: string | null
+  imageCid: string | null
+  photoTakenAt: string | null
   createdAt: string
   indexedAt: string
 }
@@ -50,12 +70,30 @@ const migrationProvider: MigrationProvider = {
 migrations['001'] = {
   async up(db: Kysely<unknown>) {
     await db.schema
-      .createTable('status')
+      .createTable('tree')
       .addColumn('uri', 'varchar', (col) => col.primaryKey())
       .addColumn('authorDid', 'varchar', (col) => col.notNull())
-      .addColumn('status', 'varchar', (col) => col.notNull())
+      .addColumn('name', 'varchar', (col) => col.notNull())
+      .addColumn('description', 'varchar')
+      .addColumn('imageCid', 'varchar')
+      .addColumn('latitude', 'varchar', (col) => col.notNull())
+      .addColumn('longitude', 'varchar', (col) => col.notNull())
       .addColumn('createdAt', 'varchar', (col) => col.notNull())
       .addColumn('indexedAt', 'varchar', (col) => col.notNull())
+      .execute()
+    await db.schema
+      .createTable('inscription')
+      .addColumn('uri', 'varchar', (col) => col.primaryKey())
+      .addColumn('authorDid', 'varchar', (col) => col.notNull())
+      .addColumn('tree', 'varchar', (col) => col.notNull())
+      .addColumn('text', 'varchar', (col) => col.notNull())
+      .addColumn('createdAt', 'varchar', (col) => col.notNull())
+      .addColumn('indexedAt', 'varchar', (col) => col.notNull())
+      .execute()
+    await db.schema
+      .createIndex('inscription_tree_idx')
+      .on('inscription')
+      .column('tree')
       .execute()
     await db.schema
       .createTable('auth_session')
@@ -71,13 +109,88 @@ migrations['001'] = {
   async down(db: Kysely<unknown>) {
     await db.schema.dropTable('auth_state').execute()
     await db.schema.dropTable('auth_session').execute()
-    await db.schema.dropTable('status').execute()
+    await db.schema.dropTable('inscription').execute()
+    await db.schema.dropTable('tree').execute()
+  },
+}
+
+migrations['002'] = {
+  async up(db: Kysely<unknown>) {
+    await db.schema
+      .alterTable('tree')
+      .addColumn('slug', 'varchar', (col) => col.notNull().defaultTo(''))
+      .execute()
+    await db.schema
+      .createIndex('tree_slug_idx')
+      .on('tree')
+      .column('slug')
+      .execute()
+  },
+  async down(db: Kysely<unknown>) {
+    await db.schema.dropIndex('tree_slug_idx').execute()
+    await db.schema.alterTable('tree').dropColumn('slug').execute()
+  },
+}
+
+migrations['003'] = {
+  async up(db: Kysely<unknown>) {
+    // SQLite requires table recreation to change NOT NULL constraints
+    await db.schema
+      .createTable('inscription_new')
+      .addColumn('uri', 'varchar', (col) => col.primaryKey())
+      .addColumn('authorDid', 'varchar', (col) => col.notNull())
+      .addColumn('tree', 'varchar', (col) => col.notNull())
+      .addColumn('text', 'varchar')
+      .addColumn('imageCid', 'varchar')
+      .addColumn('createdAt', 'varchar', (col) => col.notNull())
+      .addColumn('indexedAt', 'varchar', (col) => col.notNull())
+      .execute()
+    await sql`INSERT INTO inscription_new (uri, "authorDid", tree, text, "createdAt", "indexedAt") SELECT uri, "authorDid", tree, text, "createdAt", "indexedAt" FROM inscription`.execute(db)
+    await db.schema.dropTable('inscription').execute()
+    await sql`ALTER TABLE inscription_new RENAME TO inscription`.execute(db)
+    await db.schema
+      .createIndex('inscription_tree_idx')
+      .on('inscription')
+      .column('tree')
+      .execute()
+  },
+  async down(db: Kysely<unknown>) {
+    await db.schema.dropIndex('inscription_tree_idx').execute()
+    await db.schema
+      .createTable('inscription_old')
+      .addColumn('uri', 'varchar', (col) => col.primaryKey())
+      .addColumn('authorDid', 'varchar', (col) => col.notNull())
+      .addColumn('tree', 'varchar', (col) => col.notNull())
+      .addColumn('text', 'varchar', (col) => col.notNull())
+      .addColumn('createdAt', 'varchar', (col) => col.notNull())
+      .addColumn('indexedAt', 'varchar', (col) => col.notNull())
+      .execute()
+    await sql`INSERT INTO inscription_old (uri, "authorDid", tree, text, "createdAt", "indexedAt") SELECT uri, "authorDid", tree, text, "createdAt", "indexedAt" FROM inscription`.execute(db)
+    await db.schema.dropTable('inscription').execute()
+    await sql`ALTER TABLE inscription_old RENAME TO inscription`.execute(db)
+    await db.schema
+      .createIndex('inscription_tree_idx')
+      .on('inscription')
+      .column('tree')
+      .execute()
+  },
+}
+
+migrations['004'] = {
+  async up(db: Kysely<unknown>) {
+    await db.schema.alterTable('inscription').addColumn('photoTakenAt', 'varchar').execute()
+  },
+  async down(db: Kysely<unknown>) {
+    await db.schema.alterTable('inscription').dropColumn('photoTakenAt').execute()
   },
 }
 
 // APIs
 
 export const createDb = (location: string): Database => {
+  if (location !== ':memory:') {
+    mkdirSync(dirname(location), { recursive: true })
+  }
   return new Kysely<DatabaseSchema>({
     dialect: new SqliteDialect({
       database: new SqliteDb(location),

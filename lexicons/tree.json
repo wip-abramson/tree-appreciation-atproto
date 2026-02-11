@@ -1,0 +1,41 @@
+{
+  "lexicon": 1,
+  "id": "com.treeappreciation.tree",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["name", "latitude", "longitude", "createdAt"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "image": {
+            "type": "blob",
+            "accept": ["image/png", "image/jpeg"],
+            "maxSize": 1000000
+          },
+          "latitude": {
+            "type": "string",
+            "maxLength": 30
+          },
+          "longitude": {
+            "type": "string",
+            "maxLength": 30
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

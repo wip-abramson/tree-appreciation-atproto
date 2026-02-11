@@ -1,0 +1,38 @@
+{
+  "lexicon": 1,
+  "id": "com.treeappreciation.inscription",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["tree", "createdAt"],
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "image": {
+            "type": "blob",
+            "accept": ["image/png", "image/jpeg"],
+            "maxSize": 1000000
+          },
+          "tree": {
+            "type": "string",
+            "format": "at-uri"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          },
+          "photoTakenAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "When the photo was taken, from EXIF or manual entry"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,5 +1,7 @@
 import type { Database } from '#/db'
-import * as Status from '#/lexicon/types/xyz/statusphere/status'
+import * as Tree from '#/lexicon/types/com/treeappreciation/tree'
+import * as Inscription from '#/lexicon/types/com/treeappreciation/inscription'
+import { slugify, findUniqueSlug } from '#/lib/slug'
 import { IdResolver, MemoryCache } from '@atproto/identity'
 import { Event, Firehose } from '@atproto/sync'
 import pino from 'pino'
@@ -11,56 +13,108 @@ const DAY = HOUR * 24
 export function createIngester(db: Database) {
   const logger = pino({ name: 'firehose', level: env.LOG_LEVEL })
   return new Firehose({
-    filterCollections: ['xyz.statusphere.status'],
+    filterCollections: [
+      'com.treeappreciation.tree',
+      'com.treeappreciation.inscription',
+    ],
     handleEvent: async (evt: Event) => {
-      // Watch for write events
       if (evt.event === 'create' || evt.event === 'update') {
         const now = new Date()
         const record = evt.record
 
-        // If the write is a valid status update
         if (
-          evt.collection === 'xyz.statusphere.status' &&
-          Status.isRecord(record) &&
-          Status.validateRecord(record).success
+          evt.collection === 'com.treeappreciation.tree' &&
+          Tree.isRecord(record) &&
+          Tree.validateRecord(record).success
         ) {
           logger.debug(
-            { uri: evt.uri.toString(), status: record.status },
-            'ingesting status',
+            { uri: evt.uri.toString(), name: record.name },
+            'ingesting tree',
           )
 
-          // Store the status in our SQLite
+          const imageCid = record.image?.ref?.toString() ?? null
+          const baseSlug = slugify(record.name)
+          const slug = await findUniqueSlug(db, baseSlug, evt.uri.toString())
+
           await db
-            .insertInto('status')
+            .insertInto('tree')
             .values({
               uri: evt.uri.toString(),
               authorDid: evt.did,
-              status: record.status,
+              name: record.name,
+              slug,
+              description: record.description ?? null,
+              imageCid,
+              latitude: record.latitude,
+              longitude: record.longitude,
               createdAt: record.createdAt,
               indexedAt: now.toISOString(),
             })
             .onConflict((oc) =>
               oc.column('uri').doUpdateSet({
-                status: record.status,
+                name: record.name,
+                description: record.description ?? null,
+                imageCid,
+                latitude: record.latitude,
+                longitude: record.longitude,
+                indexedAt: now.toISOString(),
+              }),
+            )
+            .execute()
+        } else if (
+          evt.collection === 'com.treeappreciation.inscription' &&
+          Inscription.isRecord(record) &&
+          Inscription.validateRecord(record).success
+        ) {
+          logger.debug(
+            { uri: evt.uri.toString(), tree: record.tree },
+            'ingesting inscription',
+          )
+
+          const imageCid = record.image?.ref?.toString() ?? null
+
+          await db
+            .insertInto('inscription')
+            .values({
+              uri: evt.uri.toString(),
+              authorDid: evt.did,
+              tree: record.tree,
+              text: record.text ?? null,
+              imageCid,
+              photoTakenAt: record.photoTakenAt ?? null,
+              createdAt: record.createdAt,
+              indexedAt: now.toISOString(),
+            })
+            .onConflict((oc) =>
+              oc.column('uri').doUpdateSet({
+                text: record.text ?? null,
+                imageCid,
+                photoTakenAt: record.photoTakenAt ?? null,
                 indexedAt: now.toISOString(),
               }),
             )
             .execute()
         }
-      } else if (
-        evt.event === 'delete' &&
-        evt.collection === 'xyz.statusphere.status'
-      ) {
-        logger.debug(
-          { uri: evt.uri.toString(), did: evt.did },
-          'deleting status',
-        )
-
-        // Remove the status from our SQLite
-        await db
-          .deleteFrom('status')
-          .where('uri', '=', evt.uri.toString())
-          .execute()
+      } else if (evt.event === 'delete') {
+        if (evt.collection === 'com.treeappreciation.tree') {
+          logger.debug(
+            { uri: evt.uri.toString(), did: evt.did },
+            'deleting tree',
+          )
+          await db
+            .deleteFrom('tree')
+            .where('uri', '=', evt.uri.toString())
+            .execute()
+        } else if (evt.collection === 'com.treeappreciation.inscription') {
+          logger.debug(
+            { uri: evt.uri.toString(), did: evt.did },
+            'deleting inscription',
+          )
+          await db
+            .deleteFrom('inscription')
+            .where('uri', '=', evt.uri.toString())
+            .execute()
+        }
       }
     },
     onError: (err: unknown) => {

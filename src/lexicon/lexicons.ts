@@ -183,6 +183,45 @@ export const schemaDict = {
       },
     },
   },
+  ComTreeappreciationInscription: {
+    lexicon: 1,
+    id: 'com.treeappreciation.inscription',
+    defs: {
+      main: {
+        type: 'record',
+        key: 'tid',
+        record: {
+          type: 'object',
+          required: ['tree', 'createdAt'],
+          properties: {
+            text: {
+              type: 'string',
+              maxLength: 1000,
+            },
+            image: {
+              type: 'blob',
+              accept: ['image/png', 'image/jpeg'],
+              maxSize: 1000000,
+            },
+            tree: {
+              type: 'string',
+              format: 'at-uri',
+            },
+            createdAt: {
+              type: 'string',
+              format: 'datetime',
+            },
+            photoTakenAt: {
+              type: 'string',
+              format: 'datetime',
+              description:
+                'When the photo was taken, from EXIF or manual entry',
+            },
+          },
+        },
+      },
+    },
+  },
   AppBskyActorProfile: {
     lexicon: 1,
     id: 'app.bsky.actor.profile',
@@ -238,32 +277,6 @@ export const schemaDict = {
       },
     },
   },
-  XyzStatusphereStatus: {
-    lexicon: 1,
-    id: 'xyz.statusphere.status',
-    defs: {
-      main: {
-        type: 'record',
-        key: 'tid',
-        record: {
-          type: 'object',
-          required: ['status', 'createdAt'],
-          properties: {
-            status: {
-              type: 'string',
-              minLength: 1,
-              maxGraphemes: 1,
-              maxLength: 32,
-            },
-            createdAt: {
-              type: 'string',
-              format: 'datetime',
-            },
-          },
-        },
-      },
-    },
-  },
   ComAtprotoRepoStrongRef: {
     lexicon: 1,
     id: 'com.atproto.repo.strongRef',
@@ -285,12 +298,54 @@ export const schemaDict = {
       },
     },
   },
+  ComTreeappreciationTree: {
+    lexicon: 1,
+    id: 'com.treeappreciation.tree',
+    defs: {
+      main: {
+        type: 'record',
+        key: 'tid',
+        record: {
+          type: 'object',
+          required: ['name', 'latitude', 'longitude', 'createdAt'],
+          properties: {
+            name: {
+              type: 'string',
+              maxLength: 200,
+            },
+            description: {
+              type: 'string',
+              maxLength: 1000,
+            },
+            image: {
+              type: 'blob',
+              accept: ['image/png', 'image/jpeg'],
+              maxSize: 1000000,
+            },
+            latitude: {
+              type: 'string',
+              maxLength: 30,
+            },
+            longitude: {
+              type: 'string',
+              maxLength: 30,
+            },
+            createdAt: {
+              type: 'string',
+              format: 'datetime',
+            },
+          },
+        },
+      },
+    },
+  },
 }
 export const schemas: LexiconDoc[] = Object.values(schemaDict) as LexiconDoc[]
 export const lexicons: Lexicons = new Lexicons(schemas)
 export const ids = {
   ComAtprotoLabelDefs: 'com.atproto.label.defs',
+  ComTreeappreciationInscription: 'com.treeappreciation.inscription',
   AppBskyActorProfile: 'app.bsky.actor.profile',
-  XyzStatusphereStatus: 'xyz.statusphere.status',
   ComAtprotoRepoStrongRef: 'com.atproto.repo.strongRef',
+  ComTreeappreciationTree: 'com.treeappreciation.tree',
 }

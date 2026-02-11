@@ -9,6 +9,7 @@
     "moduleResolution": "Node10",
     "outDir": "dist",
     "importsNotUsedAsValues": "remove",
+    "jsx": "react-jsx",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

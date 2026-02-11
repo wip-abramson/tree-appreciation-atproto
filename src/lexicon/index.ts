@@ -16,15 +16,51 @@ export function createServer(options?: XrpcOptions): Server {
 
 export class Server {
   xrpc: XrpcServer
-  app: AppNS
-  xyz: XyzNS
   com: ComNS
+  app: AppNS
 
   constructor(options?: XrpcOptions) {
     this.xrpc = createXrpcServer(schemas, options)
-    this.app = new AppNS(this)
-    this.xyz = new XyzNS(this)
     this.com = new ComNS(this)
+    this.app = new AppNS(this)
+  }
+}
+
+export class ComNS {
+  _server: Server
+  treeappreciation: ComTreeappreciationNS
+  atproto: ComAtprotoNS
+
+  constructor(server: Server) {
+    this._server = server
+    this.treeappreciation = new ComTreeappreciationNS(server)
+    this.atproto = new ComAtprotoNS(server)
+  }
+}
+
+export class ComTreeappreciationNS {
+  _server: Server
+
+  constructor(server: Server) {
+    this._server = server
+  }
+}
+
+export class ComAtprotoNS {
+  _server: Server
+  repo: ComAtprotoRepoNS
+
+  constructor(server: Server) {
+    this._server = server
+    this.repo = new ComAtprotoRepoNS(server)
+  }
+}
+
+export class ComAtprotoRepoNS {
+  _server: Server
+
+  constructor(server: Server) {
+    this._server = server
   }
 }
 
@@ -49,52 +85,6 @@ export class AppBskyNS {
 }
 
 export class AppBskyActorNS {
-  _server: Server
-
-  constructor(server: Server) {
-    this._server = server
-  }
-}
-
-export class XyzNS {
-  _server: Server
-  statusphere: XyzStatusphereNS
-
-  constructor(server: Server) {
-    this._server = server
-    this.statusphere = new XyzStatusphereNS(server)
-  }
-}
-
-export class XyzStatusphereNS {
-  _server: Server
-
-  constructor(server: Server) {
-    this._server = server
-  }
-}
-
-export class ComNS {
-  _server: Server
-  atproto: ComAtprotoNS
-
-  constructor(server: Server) {
-    this._server = server
-    this.atproto = new ComAtprotoNS(server)
-  }
-}
-
-export class ComAtprotoNS {
-  _server: Server
-  repo: ComAtprotoRepoNS
-
-  constructor(server: Server) {
-    this._server = server
-    this.repo = new ComAtprotoRepoNS(server)
-  }
-}
-
-export class ComAtprotoRepoNS {
   _server: Server
 
   constructor(server: Server) {

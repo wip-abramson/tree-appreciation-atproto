@@ -1,0 +1,342 @@
+import type { Tree, Inscription } from '#/db'
+import { Shell } from './shell'
+
+type Props = {
+  tree: Tree
+  inscriptions: Inscription[]
+  didHandleMap: Record<string, string | undefined>
+  currentDid: string | null
+}
+
+const imagePreviewScript = `
+document.querySelector('.inscription-form input[type="file"]').addEventListener('change', function(e) {
+  var preview = document.getElementById('inscription-preview');
+  var datetimeLabel = document.getElementById('photo-taken-at-label');
+  var datetimeField = document.getElementById('photo-taken-at');
+  var feedback = document.getElementById('datetime-feedback');
+  var file = e.target.files[0];
+  if (file) {
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      preview.src = ev.target.result;
+      preview.style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+    datetimeLabel.style.display = '';
+    if (typeof exifr !== 'undefined') {
+      exifr.parse(file).then(function(exif) {
+        console.log('[tree-detail] exifr.parse result:', exif);
+        console.log('[tree-detail] DateTimeOriginal:', exif && exif.DateTimeOriginal, typeof (exif && exif.DateTimeOriginal));
+        var raw = exif && exif.DateTimeOriginal;
+        if (raw instanceof Date && !isNaN(raw.getTime())) {
+          var y = raw.getFullYear();
+          var mo = String(raw.getMonth() + 1).padStart(2, '0');
+          var d = String(raw.getDate()).padStart(2, '0');
+          var h = String(raw.getHours()).padStart(2, '0');
+          var mi = String(raw.getMinutes()).padStart(2, '0');
+          datetimeField.value = y + '-' + mo + '-' + d + 'T' + h + ':' + mi;
+          feedback.textContent = 'Photo date extracted from image';
+        } else {
+          console.log('[tree-detail] DateTimeOriginal not a valid Date, raw value:', raw);
+        }
+      }).catch(function(err) {
+        console.error('[tree-detail] exifr.parse error:', err);
+      });
+    } else {
+      console.log('[tree-detail] exifr not loaded');
+    }
+  } else {
+    preview.style.display = 'none';
+    preview.src = '';
+    datetimeLabel.style.display = 'none';
+    datetimeField.value = '';
+    feedback.textContent = '';
+  }
+});
+`
+
+const ringImageOrientationScript = `
+(function() {
+  function classify(img) {
+    if (img.naturalWidth === 0) return;
+    if (img.naturalHeight > img.naturalWidth) {
+      img.classList.add('ring-image--portrait');
+    } else {
+      img.classList.add('ring-image--landscape');
+    }
+  }
+  document.querySelectorAll('.ring-image').forEach(function(img) {
+    if (img.complete && img.naturalWidth > 0) classify(img);
+  });
+  document.addEventListener('load', function(e) {
+    if (e.target && e.target.classList && e.target.classList.contains('ring-image')) {
+      classify(e.target);
+    }
+  }, true);
+})();
+`
+
+function ringAge(index: number, total: number): string {
+  if (total <= 1) return 'ring--newest'
+  if (index === total - 1) return 'ring--newest'
+  const position = index / (total - 1)
+  if (position < 0.4) return 'ring--old'
+  if (position < 0.75) return 'ring--mid'
+  return 'ring--recent'
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+function RingItem({
+  inscription,
+  index,
+  total,
+  handle,
+  isYou,
+}: {
+  inscription: Inscription
+  index: number
+  total: number
+  handle: string
+  isYou: boolean
+}) {
+  const age = ringAge(index, total)
+  const isTextOnly = !inscription.imageCid && inscription.text
+  const classes = [
+    'ring-marker',
+    age,
+    isTextOnly ? 'ring-text-only' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  return (
+    <div className={classes}>
+      {inscription.imageCid ? (
+        <img
+          className="ring-image"
+          src={`https://cdn.bsky.app/img/feed_fullsize/plain/${inscription.authorDid}/${inscription.imageCid}@jpeg`}
+          alt="Inscription photo"
+        />
+      ) : null}
+      {inscription.text ? (
+        <p className="ring-text">{inscription.text}</p>
+      ) : null}
+      <div className="ring-meta">
+        <a
+          href={`https://bsky.app/profile/${handle}`}
+          className="ring-author"
+        >
+          @{handle}
+        </a>
+        {isYou ? <span className="ring-you">you</span> : null}
+        <span className="ring-date">{formatDate(inscription.createdAt)}</span>
+      </div>
+    </div>
+  )
+}
+
+const COLLAPSE_THRESHOLD = 15
+
+const headContent = (
+  <>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      rel="preconnect"
+      href="https://fonts.gstatic.com"
+      crossOrigin="anonymous"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,600;1,6..72,300;1,6..72,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap"
+      rel="stylesheet"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://cdn.jsdelivr.net/npm/exifr/dist/lite.umd.js"></script>
+  </>
+)
+
+export function TreeDetail({
+  tree,
+  inscriptions,
+  didHandleMap,
+  currentDid,
+}: Props) {
+  const authorHandle = didHandleMap[tree.authorDid] || tree.authorDid
+  const imageUrl = tree.imageCid
+    ? `https://cdn.bsky.app/img/feed_fullsize/plain/${tree.authorDid}/${tree.imageCid}@jpeg`
+    : null
+
+  const olderCount =
+    inscriptions.length > COLLAPSE_THRESHOLD
+      ? inscriptions.length - COLLAPSE_THRESHOLD
+      : 0
+  const olderInscriptions = inscriptions.slice(0, olderCount)
+  const visibleInscriptions = inscriptions.slice(olderCount)
+
+  return (
+    <Shell title={tree.name} headContent={headContent}>
+      {/* Site header — compact on detail page */}
+      <div className="tree-detail-header">
+        <h1>
+          <a href="/">Tree Appreciation</a>
+        </h1>
+      </div>
+
+      {/* Zone 1: Hero */}
+      {imageUrl ? (
+        <div className="tree-hero">
+          <img src={imageUrl} alt={tree.name} />
+          <div className="tree-hero-overlay">
+            <h2 className="tree-hero-name">{tree.name}</h2>
+          </div>
+        </div>
+      ) : (
+        <div className="tree-hero tree-hero--no-image">
+          <h2 className="tree-hero-name">{tree.name}</h2>
+        </div>
+      )}
+
+      {/* Zone 2: Presence info */}
+      <div className="tree-presence">
+        {tree.description ? (
+          <p className="tree-presence-description">{tree.description}</p>
+        ) : null}
+        <div className="tree-presence-meta">
+          <span className="tree-meta-item">
+            {tree.latitude}, {tree.longitude}
+          </span>
+          <span className="tree-meta-item">
+            seeded by{' '}
+            <a href={`https://bsky.app/profile/${authorHandle}`}>
+              @{authorHandle}
+            </a>
+          </span>
+        </div>
+      </div>
+
+      {/* Zone 3: Inscription form */}
+      <div className="inscription-zone">
+        {currentDid ? (
+          <div className="inscription-form-wrapper">
+            <h3>Leave your mark</h3>
+            <form
+              action="/inscription"
+              method="post"
+              encType="multipart/form-data"
+              className="inscription-form"
+            >
+              <input type="hidden" name="tree" value={tree.uri} />
+              <label>
+                Add a photo
+                <input
+                  type="file"
+                  name="image"
+                  accept="image/jpeg,image/png"
+                />
+              </label>
+              <img id="inscription-preview" />
+              <span id="datetime-feedback" className="datetime-feedback"></span>
+              <label id="photo-taken-at-label" style={{ display: 'none' }}>
+                Photo taken at (optional)
+                <input type="datetime-local" id="photo-taken-at" name="photoTakenAt" />
+                <span className="form-hint">Auto-filled from photo if available</span>
+              </label>
+              <label>
+                Caption or note (optional)
+                <textarea
+                  name="text"
+                  placeholder="What do you notice about this tree today?"
+                  maxLength={1000}
+                  rows={2}
+                ></textarea>
+              </label>
+              <button type="submit">Inscribe</button>
+            </form>
+            <script
+              dangerouslySetInnerHTML={{ __html: imagePreviewScript }}
+            />
+          </div>
+        ) : (
+          <div className="inscription-form-wrapper">
+            <p className="inscription-login-prompt">
+              <a href="/login">Log in</a> to leave your mark on this tree.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Zone 4: Memory rings */}
+      <div className="rings-section">
+        <h2 className="rings-header">
+          Memory Rings{' '}
+          <span>
+            {inscriptions.length} inscription
+            {inscriptions.length !== 1 ? 's' : ''}
+          </span>
+        </h2>
+
+        {inscriptions.length === 0 ? (
+          <div className="rings-empty">
+            <div className="rings-empty-marker">
+              <p className="rings-empty-text">
+                No inscriptions yet. Be the first to leave your mark.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="rings-trunk">
+            {olderCount > 0 ? (
+              <details className="rings-older-toggle">
+                <summary>
+                  {olderCount} older inscription
+                  {olderCount !== 1 ? 's' : ''}
+                </summary>
+                {olderInscriptions.map((inscription, i) => {
+                  const handle =
+                    didHandleMap[inscription.authorDid] ||
+                    inscription.authorDid
+                  const isYou = inscription.authorDid === currentDid
+                  return (
+                    <RingItem
+                      key={inscription.uri}
+                      inscription={inscription}
+                      index={i}
+                      total={inscriptions.length}
+                      handle={handle}
+                      isYou={isYou}
+                    />
+                  )
+                })}
+              </details>
+            ) : null}
+            {visibleInscriptions.map((inscription, i) => {
+              const actualIndex = olderCount + i
+              const handle =
+                didHandleMap[inscription.authorDid] || inscription.authorDid
+              const isYou = inscription.authorDid === currentDid
+              return (
+                <RingItem
+                  key={inscription.uri}
+                  inscription={inscription}
+                  index={actualIndex}
+                  total={inscriptions.length}
+                  handle={handle}
+                  isYou={isYou}
+                />
+              )
+            })}
+          </div>
+        )}
+      </div>
+      <script
+        dangerouslySetInnerHTML={{ __html: ringImageOrientationScript }}
+      />
+    </Shell>
+  )
+}
