@@ -1,12 +1,12 @@
-app = 'tree-appreciation'
-primary_region = 'sjc'
+# fly.toml app configuration file generated for tree-appreciation-atproto on 2026-02-12T10:56:06Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'tree-appreciation-atproto'
+primary_region = 'ams'
 
 [build]
-
-[env]
-  NODE_ENV = 'production'
-  PORT = '8080'
-  DB_PATH = '/data/prod.db'
 
 [http_service]
   internal_port = 8080
@@ -14,7 +14,10 @@ primary_region = 'sjc'
   auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
+  processes = ['app']
 
-[mounts]
-  source = 'data'
-  destination = '/data'
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 512
