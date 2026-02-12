@@ -1,0 +1,133 @@
+#!/usr/bin/env node
+
+'use strict'
+
+const { AtpAgent } = require('@atproto/api')
+const readline = require('node:readline')
+
+const COLLECTIONS = [
+  'com.treeappreciation.tree',
+  'com.treeappreciation.inscription',
+]
+
+async function prompt(question) {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  })
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close()
+      resolve(answer.trim())
+    })
+  })
+}
+
+async function main() {
+  const service = process.argv[2] || 'https://bsky.social'
+
+  console.log(`\nTree Appreciation — Record Cleanup`)
+  console.log(`PDS: ${service}\n`)
+
+  const identifier = await prompt('Handle or DID: ')
+  const password = await prompt('App password: ')
+
+  const agent = new AtpAgent({ service })
+
+  try {
+    await agent.login({ identifier, password })
+  } catch (err) {
+    console.error(`\nLogin failed: ${err.message}`)
+    process.exit(1)
+  }
+
+  const did = agent.session?.did
+  console.log(`\nLogged in as ${did}\n`)
+
+  let allRecords = []
+
+  for (const collection of COLLECTIONS) {
+    let cursor
+    do {
+      const res = await agent.com.atproto.repo.listRecords({
+        repo: did,
+        collection,
+        limit: 100,
+        cursor,
+      })
+
+      for (const record of res.data.records) {
+        allRecords.push({
+          uri: record.uri,
+          collection,
+          rkey: record.uri.split('/').pop(),
+          value: record.value,
+        })
+      }
+
+      cursor = res.data.cursor
+    } while (cursor)
+  }
+
+  if (allRecords.length === 0) {
+    console.log('No com.treeappreciation.* records found.')
+    process.exit(0)
+  }
+
+  console.log(`Found ${allRecords.length} record(s):\n`)
+
+  for (const rec of allRecords) {
+    const preview =
+      rec.collection === 'com.treeappreciation.tree'
+        ? rec.value.name || '(unnamed)'
+        : rec.value.text
+          ? rec.value.text.slice(0, 60)
+          : '(image inscription)'
+    const date = rec.value.createdAt
+      ? new Date(rec.value.createdAt).toLocaleDateString()
+      : '?'
+    console.log(`  [${rec.collection.split('.').pop()}] ${rec.rkey}  ${preview}  (${date})`)
+  }
+
+  console.log()
+  const confirm = await prompt(`Delete all ${allRecords.length} record(s)? (yes/no): `)
+
+  if (confirm.toLowerCase() !== 'yes') {
+    console.log('Aborted.')
+    process.exit(0)
+  }
+
+  console.log()
+  let deleted = 0
+  let failed = 0
+
+  for (const rec of allRecords) {
+    try {
+      await agent.com.atproto.repo.deleteRecord({
+        repo: did,
+        collection: rec.collection,
+        rkey: rec.rkey,
+      })
+      deleted++
+      process.stdout.write('.')
+    } catch (err) {
+      failed++
+      process.stdout.write('x')
+      console.error(`\n  Failed to delete ${rec.uri}: ${err.message}`)
+    }
+  }
+
+  console.log(`\n\nDone. Deleted: ${deleted}, Failed: ${failed}`)
+
+  if (deleted > 0) {
+    console.log(
+      '\nThe firehose will propagate deletes to any indexers. ' +
+        'To also clear the local SQLite DB, delete or recreate the DB file.'
+    )
+  }
+}
+
+main().catch((err) => {
+  console.error(err)
+  process.exit(1)
+})

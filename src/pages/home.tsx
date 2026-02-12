@@ -23,7 +23,7 @@ export function Home({ trees, treeCounts, didHandleMap, profile }: Props) {
               <form action="/logout" method="post" className="session-form">
                 <div>
                   Welcome back,{' '}
-                  <strong>{profile.displayName || 'friend'}</strong>.
+                  <strong>{profile.displayName || 'treekeeper'}</strong>.
                 </div>
                 <div>
                   <button type="submit">Log out</button>

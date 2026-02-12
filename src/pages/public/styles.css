@@ -381,12 +381,46 @@ button:hover,
   background-color: var(--green-600);
 }
 
-.tree-hero img {
+.tree-hero-bg {
+  display: none;
+}
+
+.tree-hero-img {
   width: 100%;
   height: 100%;
   max-height: 70vh;
   object-fit: cover;
   display: block;
+}
+
+/* Portrait hero: blurred fill behind centered image */
+.tree-hero--portrait {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 70vh;
+}
+
+.tree-hero--portrait .tree-hero-bg {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(24px) saturate(0.8) brightness(0.7);
+  transform: scale(1.1);
+}
+
+.tree-hero--portrait .tree-hero-img {
+  position: relative;
+  width: auto;
+  max-width: 55%;
+  height: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  border-radius: 4px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
 }
 
 .tree-hero-overlay {
@@ -458,6 +492,62 @@ button:hover,
 
 .tree-meta-item a:hover {
   text-decoration: underline;
+}
+
+/* Map */
+.tree-map {
+  width: 100%;
+  height: 200px;
+  border-radius: 8px;
+  border: 1px solid var(--bark-200);
+  margin-top: 1rem;
+  overflow: hidden;
+}
+
+.tree-map .leaflet-tile-pane,
+.seed-map .leaflet-tile-pane {
+  filter: saturate(0.4) brightness(1.05);
+}
+
+/* Seed form map */
+.seed-map .leaflet-control-geocoder {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 0.9rem;
+}
+
+.seed-map {
+  width: 100%;
+  height: 240px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+  cursor: crosshair;
+  transition: opacity 0.2s;
+}
+
+.tree-map-links {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 0.5rem;
+  font-family: 'DM Mono', 'Courier New', monospace;
+  font-size: 0.75rem;
+}
+
+.tree-map-links a {
+  color: var(--green-500);
+  text-decoration: none;
+}
+
+.tree-map-links a:hover {
+  text-decoration: underline;
+}
+
+.tree-map-links-sep {
+  color: var(--bark-300);
 }
 
 /* Zone 3: Inscription form */
@@ -609,15 +699,15 @@ button:hover,
 
 /* Temporal depth */
 .ring--old {
-  opacity: 0.7;
+  opacity: 0.88;
 }
 
 .ring--old .ring-image {
-  filter: saturate(0.7);
+  filter: saturate(0.85);
 }
 
 .ring--mid {
-  opacity: 0.85;
+  opacity: 0.94;
 }
 
 .ring--recent {
@@ -690,6 +780,22 @@ button:hover,
   font-family: 'DM Mono', 'Courier New', monospace;
   font-size: 0.75rem;
   color: var(--bark-400);
+}
+
+.ring-photo-date {
+  font-family: 'Newsreader', Georgia, serif;
+  font-style: italic;
+  font-size: 0.8rem;
+  color: var(--bark-400);
+  margin-top: -2px;
+  margin-bottom: 4px;
+  letter-spacing: 0.01em;
+}
+
+.ring-photo-date::before {
+  content: '\1F4F7\00a0';
+  font-style: normal;
+  font-size: 0.7rem;
 }
 
 /* Empty state trunk stub */
@@ -797,6 +903,16 @@ button:hover,
   font-style: italic;
 }
 
+/* Checkbox label (e.g. hide-location) */
+.checkbox-label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--gray-500);
+}
+
 /* Datetime feedback */
 .datetime-feedback {
   font-size: 0.85rem;
@@ -805,11 +921,36 @@ button:hover,
   font-weight: 600;
 }
 
+/* Delete buttons */
+.delete-form {
+  display: inline;
+}
+
+.delete-btn {
+  background: none;
+  border: none;
+  color: var(--bark-400);
+  font-size: 0.75rem;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  font-weight: 400;
+}
+
+.delete-btn:hover {
+  color: var(--error-500);
+  background: none;
+}
+
 /* ============================================
    Responsive
    ============================================ */
 
 @media (max-width: 480px) {
+  .tree-hero--portrait .tree-hero-img {
+    max-width: 75%;
+  }
+
   .tree-hero-name {
     font-size: 1.8rem;
   }

@@ -45,8 +45,8 @@ export function createIngester(db: Database) {
               slug,
               description: record.description ?? null,
               imageCid,
-              latitude: record.latitude,
-              longitude: record.longitude,
+              latitude: record.latitude ?? null,
+              longitude: record.longitude ?? null,
               createdAt: record.createdAt,
               indexedAt: now.toISOString(),
             })
@@ -55,8 +55,8 @@ export function createIngester(db: Database) {
                 name: record.name,
                 description: record.description ?? null,
                 imageCid,
-                latitude: record.latitude,
-                longitude: record.longitude,
+                latitude: record.latitude ?? null,
+                longitude: record.longitude ?? null,
                 indexedAt: now.toISOString(),
               }),
             )

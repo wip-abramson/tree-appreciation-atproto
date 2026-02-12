@@ -10,8 +10,8 @@ export interface Record {
   name: string
   description?: string
   image?: BlobRef
-  latitude: string
-  longitude: string
+  latitude?: string
+  longitude?: string
   createdAt: string
   [k: string]: unknown
 }

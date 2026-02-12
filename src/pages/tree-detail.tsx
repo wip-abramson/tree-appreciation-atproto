@@ -55,6 +55,21 @@ document.querySelector('.inscription-form input[type="file"]').addEventListener(
 });
 `
 
+const heroOrientationScript = `
+(function() {
+  var img = document.querySelector('.tree-hero-img');
+  if (!img) return;
+  function classify() {
+    if (img.naturalWidth === 0) return;
+    if (img.naturalHeight > img.naturalWidth) {
+      img.closest('.tree-hero').classList.add('tree-hero--portrait');
+    }
+  }
+  if (img.complete && img.naturalWidth > 0) classify();
+  else img.addEventListener('load', classify);
+})();
+`
+
 const ringImageOrientationScript = `
 (function() {
   function classify(img) {
@@ -93,6 +108,10 @@ function formatDate(iso: string): string {
   })
 }
 
+function rkeyFromUri(uri: string): string {
+  return uri.split('/').pop()!
+}
+
 function RingItem({
   inscription,
   index,
@@ -125,6 +144,11 @@ function RingItem({
           alt="Inscription photo"
         />
       ) : null}
+      {inscription.photoTakenAt ? (
+        <div className="ring-photo-date">
+          {formatDate(inscription.photoTakenAt)}
+        </div>
+      ) : null}
       {inscription.text ? (
         <p className="ring-text">{inscription.text}</p>
       ) : null}
@@ -137,12 +161,52 @@ function RingItem({
         </a>
         {isYou ? <span className="ring-you">you</span> : null}
         <span className="ring-date">{formatDate(inscription.createdAt)}</span>
+        {isYou ? (
+          <form
+            action={`/inscription/${rkeyFromUri(inscription.uri)}/delete`}
+            method="post"
+            className="delete-form"
+            onSubmit="return confirm('Delete this inscription?')"
+          >
+            <button type="submit" className="delete-btn">delete</button>
+          </form>
+        ) : null}
       </div>
     </div>
   )
 }
 
 const COLLAPSE_THRESHOLD = 15
+
+const mapScript = `
+(function() {
+  var el = document.getElementById('tree-map');
+  if (!el) return;
+  var lat = parseFloat(el.dataset.lat);
+  var lng = parseFloat(el.dataset.lng);
+  if (isNaN(lat) || isNaN(lng)) return;
+  var map = L.map(el, {
+    zoomControl: false,
+    dragging: false,
+    touchZoom: false,
+    scrollWheelZoom: false,
+    doubleClickZoom: false,
+    boxZoom: false,
+    keyboard: false,
+    attributionControl: true
+  }).setView([lat, lng], 15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '\\u00a9 OpenStreetMap'
+  }).addTo(map);
+  L.circleMarker([lat, lng], {
+    radius: 8,
+    fillColor: '#3a7d2a',
+    color: '#265c1a',
+    weight: 2,
+    fillOpacity: 0.9
+  }).addTo(map);
+})();
+`
 
 const headContent = (
   <>
@@ -158,6 +222,8 @@ const headContent = (
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <script src="https://cdn.jsdelivr.net/npm/exifr/dist/lite.umd.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   </>
 )
 
@@ -191,7 +257,13 @@ export function TreeDetail({
       {/* Zone 1: Hero */}
       {imageUrl ? (
         <div className="tree-hero">
-          <img src={imageUrl} alt={tree.name} />
+          <img
+            className="tree-hero-bg"
+            src={imageUrl}
+            alt=""
+            aria-hidden="true"
+          />
+          <img className="tree-hero-img" src={imageUrl} alt={tree.name} />
           <div className="tree-hero-overlay">
             <h2 className="tree-hero-name">{tree.name}</h2>
           </div>
@@ -208,9 +280,11 @@ export function TreeDetail({
           <p className="tree-presence-description">{tree.description}</p>
         ) : null}
         <div className="tree-presence-meta">
-          <span className="tree-meta-item">
-            {tree.latitude}, {tree.longitude}
-          </span>
+          {tree.latitude && tree.longitude ? (
+            <span className="tree-meta-item">
+              {tree.latitude}, {tree.longitude}
+            </span>
+          ) : null}
           <span className="tree-meta-item">
             seeded by{' '}
             <a href={`https://bsky.app/profile/${authorHandle}`}>
@@ -218,6 +292,16 @@ export function TreeDetail({
             </a>
           </span>
         </div>
+        {tree.latitude && tree.longitude ? (
+          <>
+            <div id="tree-map" className="tree-map" data-lat={tree.latitude} data-lng={tree.longitude}></div>
+            <div className="tree-map-links">
+              <a href={`https://www.openstreetmap.org/?mlat=${tree.latitude}&mlon=${tree.longitude}#map=16/${tree.latitude}/${tree.longitude}`} target="_blank" rel="noopener noreferrer">Open in OpenStreetMap</a>
+              <span className="tree-map-links-sep">&middot;</span>
+              <a href={`https://www.google.com/maps/search/?api=1&query=${tree.latitude},${tree.longitude}`} target="_blank" rel="noopener noreferrer">Open in Google Maps</a>
+            </div>
+          </>
+        ) : null}
       </div>
 
       {/* Zone 3: Inscription form */}
@@ -335,7 +419,13 @@ export function TreeDetail({
         )}
       </div>
       <script
+        dangerouslySetInnerHTML={{ __html: heroOrientationScript }}
+      />
+      <script
         dangerouslySetInnerHTML={{ __html: ringImageOrientationScript }}
+      />
+      <script
+        dangerouslySetInnerHTML={{ __html: mapScript }}
       />
     </Shell>
   )

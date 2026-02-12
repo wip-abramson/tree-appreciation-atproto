@@ -475,28 +475,20 @@ export const createRouter = (ctx: AppContext): RequestListener => {
         imageCid = uploadRes.data.blob.ref.toString()
       }
 
-      // Use form values, falling back to EXIF GPS
-      const latitude = req.body?.latitude || exifLat
-      const longitude = req.body?.longitude || exifLng
-
-      if (!latitude || !longitude) {
-        return res
-          .status(400)
-          .type('html')
-          .send(
-            '<h1>Error: Location required. Provide coordinates or upload an image with GPS data.</h1>',
-          )
-      }
+      // Use form values, falling back to EXIF GPS (unless user opted to hide location)
+      const hideLocation = req.body?.hideLocation === 'on'
+      const latitude = hideLocation ? undefined : (req.body?.latitude || exifLat)
+      const longitude = hideLocation ? undefined : (req.body?.longitude || exifLng)
 
       const record: Record<string, unknown> = {
         $type: 'com.treeappreciation.tree',
         name: req.body?.name,
         description: req.body?.description || undefined,
         image: imageBlob,
-        latitude,
-        longitude,
         createdAt: new Date().toISOString(),
       }
+      if (latitude) record.latitude = latitude
+      if (longitude) record.longitude = longitude
 
       if (!Tree.validateRecord(record).success) {
         return res
@@ -538,8 +530,8 @@ export const createRouter = (ctx: AppContext): RequestListener => {
             slug,
             description: (record.description as string) ?? null,
             imageCid,
-            latitude,
-            longitude,
+            latitude: latitude ?? null,
+            longitude: longitude ?? null,
             createdAt: record.createdAt as string,
             indexedAt: new Date().toISOString(),
           })
@@ -677,6 +669,76 @@ export const createRouter = (ctx: AppContext): RequestListener => {
         .executeTakeFirst()
 
       return res.redirect(`/tree/${treeRow?.slug ?? encodeURIComponent(treeUri)}`)
+    }),
+  )
+
+  // Delete an inscription
+  router.post(
+    '/inscription/:rkey/delete',
+    handler(async (req, res) => {
+      const agent = await getSessionAgent(req, res, ctx)
+      if (!agent) {
+        return res
+          .status(401)
+          .type('html')
+          .send('<h1>Error: Session required</h1>')
+      }
+
+      const rkey = req.params.rkey
+      const uri = `at://${agent.assertDid}/com.treeappreciation.inscription/${rkey}`
+
+      const inscription = await ctx.db
+        .selectFrom('inscription')
+        .selectAll()
+        .where('uri', '=', uri)
+        .executeTakeFirst()
+
+      if (!inscription) {
+        return res
+          .status(404)
+          .type('html')
+          .send('<h1>Inscription not found</h1>')
+      }
+
+      if (inscription.authorDid !== agent.assertDid) {
+        return res
+          .status(403)
+          .type('html')
+          .send('<h1>Error: You can only delete your own inscriptions</h1>')
+      }
+
+      try {
+        await agent.com.atproto.repo.deleteRecord({
+          repo: agent.assertDid,
+          collection: 'com.treeappreciation.inscription',
+          rkey,
+        })
+      } catch (err) {
+        ctx.logger.warn({ err }, 'failed to delete inscription record from PDS')
+        return res
+          .status(500)
+          .type('html')
+          .send('<h1>Error: Failed to delete record</h1>')
+      }
+
+      // Optimistically delete from local DB
+      try {
+        await ctx.db
+          .deleteFrom('inscription')
+          .where('uri', '=', uri)
+          .execute()
+      } catch (err) {
+        ctx.logger.warn({ err }, 'failed to delete inscription from local DB')
+      }
+
+      // Redirect back to the tree detail page
+      const treeRow = await ctx.db
+        .selectFrom('tree')
+        .select('slug')
+        .where('uri', '=', inscription.tree)
+        .executeTakeFirst()
+
+      return res.redirect(`/tree/${treeRow?.slug ?? '/'}`)
     }),
   )
 

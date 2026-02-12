@@ -1,0 +1,20 @@
+app = 'tree-appreciation'
+primary_region = 'sjc'
+
+[build]
+
+[env]
+  NODE_ENV = 'production'
+  PORT = '8080'
+  DB_PATH = '/data/prod.db'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+[mounts]
+  source = 'data'
+  destination = '/data'
