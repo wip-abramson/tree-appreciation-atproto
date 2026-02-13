@@ -50,6 +50,7 @@ body {
   margin: 0;
 }
 body {
+  position: relative;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
@@ -102,6 +103,127 @@ button:hover,
   background: var(--primary-400);
 }
 
+/* Account bar */
+.account-bar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 100;
+  padding: 14px 20px;
+  /* Vertically center within typical header height */
+  display: flex;
+  align-items: center;
+}
+
+.account-menu {
+  position: relative;
+}
+
+.account-menu summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.account-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.account-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--green-200);
+  transition: border-color 0.15s;
+}
+
+.account-menu[open] .account-avatar,
+.account-menu summary:hover .account-avatar {
+  border-color: var(--green-400);
+}
+
+.account-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: var(--green-500);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.95rem;
+  border: 2px solid var(--green-200);
+  transition: border-color 0.15s;
+}
+
+.account-menu[open] .account-fallback,
+.account-menu summary:hover .account-fallback {
+  border-color: var(--green-400);
+}
+
+.account-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  background: #fff;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  padding: 10px 14px;
+  min-width: 160px;
+  white-space: nowrap;
+}
+
+.account-name {
+  font-size: 0.85rem;
+  color: var(--gray-500);
+  margin-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account-logout-btn {
+  background: none;
+  border: 1px solid var(--border-color);
+  color: var(--gray-700);
+  font-size: 0.85rem;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  width: 100%;
+  font-weight: 400;
+}
+
+.account-logout-btn:hover {
+  background: var(--gray-100);
+}
+
+.account-login {
+  font-size: 0.9rem;
+  color: var(--green-500);
+  text-decoration: none;
+  font-weight: 600;
+  padding: 4px 10px;
+}
+
+.account-login:hover {
+  text-decoration: underline;
+}
+
+.login-prompt {
+  text-align: center;
+  color: var(--gray-500);
+  font-style: italic;
+  padding: 8px 0;
+}
+
+.login-prompt a {
+  color: var(--green-500);
+  font-style: normal;
+  font-weight: 600;
+}
+
 /*
   Custom components
 */
@@ -119,7 +241,7 @@ button:hover,
 #header {
   background-color: #fff;
   text-align: center;
-  padding: 0.5rem 0 1.5rem;
+  padding: 0.5rem 70px 1.5rem;
 }
 
 #header h1 {
@@ -153,13 +275,6 @@ button:hover,
 }
 .card > :last-child {
   margin-bottom: 0;
-}
-
-.session-form {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
 }
 
 .login-form {
@@ -352,7 +467,7 @@ button:hover,
 .tree-detail-header {
   background-color: #fff;
   text-align: center;
-  padding: 0.75rem 0;
+  padding: 0.75rem 70px;
 }
 
 .tree-detail-header h1 {
@@ -947,12 +1062,107 @@ button:hover,
    ============================================ */
 
 @media (max-width: 480px) {
+  .account-bar {
+    padding: 8px 10px;
+  }
+
+  .account-avatar,
+  .account-fallback {
+    width: 34px;
+    height: 34px;
+  }
+
+  .account-dropdown {
+    min-width: 140px;
+  }
+
+  /* Prevent iOS auto-zoom on input focus (requires >= 16px font) */
+  .tree-form input,
+  .tree-form textarea,
+  .inscription-form input,
+  .inscription-form textarea {
+    font-size: 16px;
+  }
+
+  /* Increase form input padding for touch */
+  .tree-form input,
+  .tree-form textarea {
+    padding: 10px 12px;
+  }
+
+  /* Larger buttons on mobile */
+  button,
+  .button {
+    padding: 10px 20px;
+    font-size: 1rem;
+  }
+
+  /* Home: header spacing — extra right padding for account bar */
+  #header {
+    padding: 0.5rem 56px 1.25rem;
+  }
+
+  #header h1 {
+    font-size: 2.2rem;
+  }
+
+  /* Home: seed CTA prominent */
+  .seed-cta {
+    padding: 14px 20px;
+    font-size: 1.15rem;
+  }
+
+  /* Home: tree grid single-column on very narrow screens */
+  .tree-grid {
+    gap: 10px;
+  }
+
+  .tree-card-body {
+    padding: 10px 12px 12px;
+  }
+
+  .tree-name {
+    font-size: 1rem;
+  }
+
+  .tree-author {
+    font-size: 0.8rem;
+  }
+
+  .tree-rings-badge {
+    font-size: 0.75rem;
+  }
+
+  /* Seed form: taller map for finger placement */
+  .seed-map {
+    height: 300px;
+  }
+
+  /* Tree detail: portrait hero adjustments */
+  .tree-hero--portrait {
+    height: 50vh;
+  }
+
   .tree-hero--portrait .tree-hero-img {
-    max-width: 75%;
+    max-width: 85%;
+    max-height: 50vh;
+  }
+
+  .tree-hero-img {
+    max-height: 50vh;
   }
 
   .tree-hero-name {
     font-size: 1.8rem;
+  }
+
+  .tree-hero-overlay {
+    padding: 2rem 1rem 1rem;
+  }
+
+  /* Tighter spacing below hero */
+  .tree-presence {
+    padding-top: 1rem;
   }
 
   .tree-presence-meta {
@@ -998,5 +1208,11 @@ button:hover,
 
   .ring-image--portrait {
     width: 75%;
+  }
+}
+
+@media (max-width: 380px) {
+  .tree-grid {
+    grid-template-columns: 1fr;
   }
 }
