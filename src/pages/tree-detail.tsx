@@ -1,4 +1,5 @@
 import type { Tree, Inscription } from '#/db'
+import { imageUrl as buildImageUrl } from '#/lib/util'
 import { Shell } from './shell'
 
 type Props = {
@@ -6,6 +7,7 @@ type Props = {
   inscriptions: Inscription[]
   didHandleMap: Record<string, string | undefined>
   currentDid: string | null
+  user?: { did: string; displayName?: string; handle?: string; avatarUrl?: string }
 }
 
 const imagePreviewScript = `
@@ -140,7 +142,7 @@ function RingItem({
       {inscription.imageCid ? (
         <img
           className="ring-image"
-          src={`https://cdn.bsky.app/img/feed_fullsize/plain/${inscription.authorDid}/${inscription.imageCid}@jpeg`}
+          src={buildImageUrl(inscription.authorDid, inscription.imageCid)}
           alt="Inscription photo"
         />
       ) : null}
@@ -220,8 +222,7 @@ const headContent = (
       href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,600;1,6..72,300;1,6..72,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap"
       rel="stylesheet"
     />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <script src="https://cdn.jsdelivr.net/npm/exifr/dist/lite.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exifr/dist/lite.umd.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   </>
@@ -232,10 +233,11 @@ export function TreeDetail({
   inscriptions,
   didHandleMap,
   currentDid,
+  user,
 }: Props) {
   const authorHandle = didHandleMap[tree.authorDid] || tree.authorDid
   const imageUrl = tree.imageCid
-    ? `https://cdn.bsky.app/img/feed_fullsize/plain/${tree.authorDid}/${tree.imageCid}@jpeg`
+    ? buildImageUrl(tree.authorDid, tree.imageCid)
     : null
 
   const olderCount =
@@ -246,7 +248,7 @@ export function TreeDetail({
   const visibleInscriptions = inscriptions.slice(olderCount)
 
   return (
-    <Shell title={tree.name} headContent={headContent}>
+    <Shell title={tree.name} headContent={headContent} user={user}>
       {/* Site header — compact on detail page */}
       <div className="tree-detail-header">
         <h1>
@@ -321,7 +323,7 @@ export function TreeDetail({
                 <input
                   type="file"
                   name="image"
-                  accept="image/jpeg,image/png"
+                  accept="image/*"
                 />
               </label>
               <img id="inscription-preview" />

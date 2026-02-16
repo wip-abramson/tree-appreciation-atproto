@@ -1,7 +1,7 @@
 import { Shell } from './shell'
 
 type Props = {
-  profile: { displayName?: string }
+  user: { did: string; displayName?: string; handle?: string; avatarUrl?: string }
 }
 
 const exifrScript = `
@@ -112,7 +112,8 @@ const exifrScript = `
         .gps(file)
         .then(function (gps) {
           if (hideCheckbox.checked) return
-          if (gps && gps.latitude != null && gps.longitude != null) {
+          if (gps && typeof gps.latitude === 'number' && !isNaN(gps.latitude)
+                  && typeof gps.longitude === 'number' && !isNaN(gps.longitude)) {
             latField.value = gps.latitude.toFixed(6)
             lngField.value = gps.longitude.toFixed(6)
             placeMarker(gps.latitude, gps.longitude, true)
@@ -158,10 +159,11 @@ const exifrScript = `
 })()
 `
 
-export function SeedTree({ profile }: Props) {
+export function SeedTree({ user }: Props) {
   return (
     <Shell
       title="Seed a Tree — Tree Appreciation"
+      user={user}
       headContent={
         <>
           <script src="https://cdn.jsdelivr.net/npm/exifr/dist/lite.umd.js"></script>
@@ -225,7 +227,7 @@ export function SeedTree({ profile }: Props) {
                   type="file"
                   id="image-input"
                   name="image"
-                  accept="image/jpeg,image/png"
+                  accept="image/*"
                   required
                 />
               </label>

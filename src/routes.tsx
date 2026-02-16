@@ -29,6 +29,9 @@ import { Login } from '#/pages/login'
 
 const MAX_BLOB_SIZE = 1_000_000
 
+// In-memory store for mock image blobs (only used when MOCK_WRITES is enabled)
+const mockImageStore = new Map<string, { data: Buffer; mime: string }>()
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20_000_000 },
@@ -103,6 +106,35 @@ async function getSessionAgent(
   }
 }
 
+type UserInfo = {
+  did: string
+  displayName?: string
+  handle?: string
+  avatarUrl?: string
+}
+
+function buildUserInfo(
+  did: string,
+  profile: Record<string, unknown>,
+  handleMap: Record<string, string | undefined>,
+): UserInfo {
+  const handle = handleMap[did]
+  const avatarCid =
+    profile.avatar &&
+    typeof profile.avatar === 'object' &&
+    'ref' in (profile.avatar as Record<string, unknown>)
+      ? String((profile.avatar as Record<string, unknown>).ref)
+      : undefined
+  return {
+    did,
+    displayName: typeof profile.displayName === 'string' ? profile.displayName : undefined,
+    handle: handle || undefined,
+    avatarUrl: avatarCid
+      ? `https://cdn.bsky.app/img/avatar/plain/${did}/${avatarCid}@jpeg`
+      : undefined,
+  }
+}
+
 export const createRouter = (ctx: AppContext): RequestListener => {
   const router = express()
 
@@ -113,6 +145,22 @@ export const createRouter = (ctx: AppContext): RequestListener => {
       maxAge: MAX_AGE * 1000,
     }),
   )
+
+  // Serve mock images (only active when MOCK_WRITES is enabled)
+  if (env.MOCK_WRITES) {
+    router.get(
+      '/mock-image/:cid',
+      handler((req, res) => {
+        const entry = mockImageStore.get(req.params.cid)
+        if (!entry) {
+          return res.status(404).send('Not found')
+        }
+        res.setHeader('content-type', entry.mime)
+        res.setHeader('cache-control', 'max-age=3600')
+        res.send(entry.data)
+      }),
+    )
+  }
 
   // OAuth metadata
   router.get(
@@ -295,7 +343,10 @@ export const createRouter = (ctx: AppContext): RequestListener => {
           ? profileRecord.value
           : {}
 
-      res.type('html').send(page(<SeedTree profile={profile} />))
+      const handleMap = await ctx.resolver.resolveDidsToHandles([agent.assertDid])
+      const user = buildUserInfo(agent.assertDid, profile, handleMap)
+
+      res.type('html').send(page(<SeedTree user={user} />))
     }),
   )
 
@@ -336,37 +387,27 @@ export const createRouter = (ctx: AppContext): RequestListener => {
         trees.map((t) => t.authorDid),
       )
 
-      if (!agent) {
-        return res
-          .type('html')
-          .send(
-            page(
-              <Home
-                trees={trees}
-                treeCounts={treeCounts}
-                didHandleMap={didHandleMap}
-              />,
-            ),
-          )
+      let user: UserInfo | undefined
+      if (agent) {
+        const profileResponse = await agent.com.atproto.repo
+          .getRecord({
+            repo: agent.assertDid,
+            collection: 'app.bsky.actor.profile',
+            rkey: 'self',
+          })
+          .catch(() => undefined)
+
+        const profileRecord = profileResponse?.data
+        const profile =
+          profileRecord &&
+          Profile.isRecord(profileRecord.value) &&
+          Profile.validateRecord(profileRecord.value).success
+            ? profileRecord.value
+            : {}
+
+        const handleMap = await ctx.resolver.resolveDidsToHandles([agent.assertDid])
+        user = buildUserInfo(agent.assertDid, profile, handleMap)
       }
-
-      // Fetch profile for logged-in user
-      const profileResponse = await agent.com.atproto.repo
-        .getRecord({
-          repo: agent.assertDid,
-          collection: 'app.bsky.actor.profile',
-          rkey: 'self',
-        })
-        .catch(() => undefined)
-
-      const profileRecord = profileResponse?.data
-
-      const profile =
-        profileRecord &&
-        Profile.isRecord(profileRecord.value) &&
-        Profile.validateRecord(profileRecord.value).success
-          ? profileRecord.value
-          : {}
 
       res
         .type('html')
@@ -376,7 +417,7 @@ export const createRouter = (ctx: AppContext): RequestListener => {
               trees={trees}
               treeCounts={treeCounts}
               didHandleMap={didHandleMap}
-              profile={profile}
+              user={user}
             />,
           ),
         )
@@ -411,7 +452,29 @@ export const createRouter = (ctx: AppContext): RequestListener => {
         tree.authorDid,
         ...inscriptions.map((i) => i.authorDid),
       ]
+      if (agent) allDids.push(agent.assertDid)
       const didHandleMap = await ctx.resolver.resolveDidsToHandles(allDids)
+
+      let user: UserInfo | undefined
+      if (agent) {
+        const profileResponse = await agent.com.atproto.repo
+          .getRecord({
+            repo: agent.assertDid,
+            collection: 'app.bsky.actor.profile',
+            rkey: 'self',
+          })
+          .catch(() => undefined)
+
+        const profileRecord = profileResponse?.data
+        const profile =
+          profileRecord &&
+          Profile.isRecord(profileRecord.value) &&
+          Profile.validateRecord(profileRecord.value).success
+            ? profileRecord.value
+            : {}
+
+        user = buildUserInfo(agent.assertDid, profile, didHandleMap)
+      }
 
       res.type('html').send(
         page(
@@ -420,6 +483,7 @@ export const createRouter = (ctx: AppContext): RequestListener => {
             inscriptions={inscriptions}
             didHandleMap={didHandleMap}
             currentDid={agent?.did ?? null}
+            user={user}
           />,
         ),
       )
@@ -457,8 +521,12 @@ export const createRouter = (ctx: AppContext): RequestListener => {
         try {
           const gps = await exifrGps(req.file.buffer)
           if (gps) {
-            exifLat = String(gps.latitude)
-            exifLng = String(gps.longitude)
+            const lat = Number(gps.latitude)
+            const lng = Number(gps.longitude)
+            if (!isNaN(lat) && !isNaN(lng)) {
+              exifLat = String(lat)
+              exifLng = String(lng)
+            }
           }
         } catch (err) {
           ctx.logger.debug({ err }, 'no EXIF GPS data found')
@@ -467,18 +535,30 @@ export const createRouter = (ctx: AppContext): RequestListener => {
         // Strip EXIF and downscale if needed
         const cleaned = await processImage(req.file.buffer, req.file.mimetype)
 
-        // Upload clean image to the user's repo
-        const uploadRes = await agent.uploadBlob(cleaned, {
-          encoding: req.file.mimetype,
-        })
-        imageBlob = uploadRes.data.blob
-        imageCid = uploadRes.data.blob.ref.toString()
+        if (env.MOCK_WRITES) {
+          ctx.logger.info('MOCK_WRITES: skipping uploadBlob for tree image')
+          imageCid = `mock-${Date.now()}`
+          mockImageStore.set(imageCid, { data: cleaned, mime: req.file.mimetype })
+        } else {
+          // Upload clean image to the user's repo
+          const uploadRes = await agent.uploadBlob(cleaned, {
+            encoding: req.file.mimetype,
+          })
+          imageBlob = uploadRes.data.blob
+          imageCid = uploadRes.data.blob.ref.toString()
+        }
       }
 
       // Use form values, falling back to EXIF GPS (unless user opted to hide location)
       const hideLocation = req.body?.hideLocation === 'on'
-      const latitude = hideLocation ? undefined : (req.body?.latitude || exifLat)
-      const longitude = hideLocation ? undefined : (req.body?.longitude || exifLng)
+      const formLat = req.body?.latitude ? String(req.body.latitude) : undefined
+      const formLng = req.body?.longitude ? String(req.body.longitude) : undefined
+      const latitude = hideLocation ? undefined : (
+        (formLat && !isNaN(Number(formLat)) ? formLat : undefined) || exifLat
+      )
+      const longitude = hideLocation ? undefined : (
+        (formLng && !isNaN(Number(formLng)) ? formLng : undefined) || exifLng
+      )
 
       const record: Record<string, unknown> = {
         $type: 'com.treeappreciation.tree',
@@ -490,7 +570,7 @@ export const createRouter = (ctx: AppContext): RequestListener => {
       if (latitude) record.latitude = latitude
       if (longitude) record.longitude = longitude
 
-      if (!Tree.validateRecord(record).success) {
+      if (!env.MOCK_WRITES && !Tree.validateRecord(record).success) {
         return res
           .status(400)
           .type('html')
@@ -498,21 +578,27 @@ export const createRouter = (ctx: AppContext): RequestListener => {
       }
 
       let uri
-      try {
-        const result = await agent.com.atproto.repo.putRecord({
-          repo: agent.assertDid,
-          collection: 'com.treeappreciation.tree',
-          rkey: TID.nextStr(),
-          record,
-          validate: false,
-        })
-        uri = result.data.uri
-      } catch (err) {
-        ctx.logger.warn({ err }, 'failed to write tree record')
-        return res
-          .status(500)
-          .type('html')
-          .send('<h1>Error: Failed to write record</h1>')
+      if (env.MOCK_WRITES) {
+        const rkey = TID.nextStr()
+        uri = `at://${agent.assertDid}/com.treeappreciation.tree/${rkey}`
+        ctx.logger.info({ uri }, 'MOCK_WRITES: skipping putRecord for tree')
+      } else {
+        try {
+          const result = await agent.com.atproto.repo.putRecord({
+            repo: agent.assertDid,
+            collection: 'com.treeappreciation.tree',
+            rkey: TID.nextStr(),
+            record,
+            validate: false,
+          })
+          uri = result.data.uri
+        } catch (err) {
+          ctx.logger.warn({ err }, 'failed to write tree record')
+          return res
+            .status(500)
+            .type('html')
+            .send('<h1>Error: Failed to write record</h1>')
+        }
       }
 
       const baseSlug = req.body?.slug
@@ -594,11 +680,18 @@ export const createRouter = (ctx: AppContext): RequestListener => {
         }
 
         const cleaned = await processImage(req.file.buffer, req.file.mimetype)
-        const uploadRes = await agent.uploadBlob(cleaned, {
-          encoding: req.file.mimetype,
-        })
-        imageBlob = uploadRes.data.blob
-        imageCid = uploadRes.data.blob.ref.toString()
+
+        if (env.MOCK_WRITES) {
+          ctx.logger.info('MOCK_WRITES: skipping uploadBlob for inscription image')
+          imageCid = `mock-${Date.now()}`
+          mockImageStore.set(imageCid, { data: cleaned, mime: req.file.mimetype })
+        } else {
+          const uploadRes = await agent.uploadBlob(cleaned, {
+            encoding: req.file.mimetype,
+          })
+          imageBlob = uploadRes.data.blob
+          imageCid = uploadRes.data.blob.ref.toString()
+        }
       }
 
       // photoTakenAt: form value > EXIF value > omitted
@@ -616,7 +709,7 @@ export const createRouter = (ctx: AppContext): RequestListener => {
       if (imageBlob) record.image = imageBlob
       if (photoTakenAt) record.photoTakenAt = photoTakenAt
 
-      if (!Inscription.validateRecord(record).success) {
+      if (!env.MOCK_WRITES && !Inscription.validateRecord(record).success) {
         return res
           .status(400)
           .type('html')
@@ -624,21 +717,27 @@ export const createRouter = (ctx: AppContext): RequestListener => {
       }
 
       let uri
-      try {
-        const result = await agent.com.atproto.repo.putRecord({
-          repo: agent.assertDid,
-          collection: 'com.treeappreciation.inscription',
-          rkey: TID.nextStr(),
-          record,
-          validate: false,
-        })
-        uri = result.data.uri
-      } catch (err) {
-        ctx.logger.warn({ err }, 'failed to write inscription record')
-        return res
-          .status(500)
-          .type('html')
-          .send('<h1>Error: Failed to write record</h1>')
+      if (env.MOCK_WRITES) {
+        const rkey = TID.nextStr()
+        uri = `at://${agent.assertDid}/com.treeappreciation.inscription/${rkey}`
+        ctx.logger.info({ uri }, 'MOCK_WRITES: skipping putRecord for inscription')
+      } else {
+        try {
+          const result = await agent.com.atproto.repo.putRecord({
+            repo: agent.assertDid,
+            collection: 'com.treeappreciation.inscription',
+            rkey: TID.nextStr(),
+            record,
+            validate: false,
+          })
+          uri = result.data.uri
+        } catch (err) {
+          ctx.logger.warn({ err }, 'failed to write inscription record')
+          return res
+            .status(500)
+            .type('html')
+            .send('<h1>Error: Failed to write record</h1>')
+        }
       }
 
       try {
@@ -707,21 +806,25 @@ export const createRouter = (ctx: AppContext): RequestListener => {
           .send('<h1>Error: You can only delete your own inscriptions</h1>')
       }
 
-      try {
-        await agent.com.atproto.repo.deleteRecord({
-          repo: agent.assertDid,
-          collection: 'com.treeappreciation.inscription',
-          rkey,
-        })
-      } catch (err) {
-        ctx.logger.warn({ err }, 'failed to delete inscription record from PDS')
-        return res
-          .status(500)
-          .type('html')
-          .send('<h1>Error: Failed to delete record</h1>')
+      if (env.MOCK_WRITES) {
+        ctx.logger.info({ uri }, 'MOCK_WRITES: skipping deleteRecord for inscription')
+      } else {
+        try {
+          await agent.com.atproto.repo.deleteRecord({
+            repo: agent.assertDid,
+            collection: 'com.treeappreciation.inscription',
+            rkey,
+          })
+        } catch (err) {
+          ctx.logger.warn({ err }, 'failed to delete inscription record from PDS')
+          return res
+            .status(500)
+            .type('html')
+            .send('<h1>Error: Failed to delete record</h1>')
+        }
       }
 
-      // Optimistically delete from local DB
+      // Delete from local DB
       try {
         await ctx.db
           .deleteFrom('inscription')

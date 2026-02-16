@@ -1,16 +1,17 @@
 import type { Tree } from '#/db'
+import { imageUrl } from '#/lib/util'
 import { Shell } from './shell'
 
 type Props = {
   trees: Tree[]
   treeCounts: Record<string, number>
   didHandleMap: Record<string, string | undefined>
-  profile?: { displayName?: string }
+  user?: { did: string; displayName?: string; handle?: string; avatarUrl?: string }
 }
 
-export function Home({ trees, treeCounts, didHandleMap, profile }: Props) {
+export function Home({ trees, treeCounts, didHandleMap, user }: Props) {
   return (
-    <Shell title="Tree Appreciation">
+    <Shell title="Tree Appreciation" user={user}>
       <div id="root">
         <div className="error"></div>
         <div id="header">
@@ -18,35 +19,15 @@ export function Home({ trees, treeCounts, didHandleMap, profile }: Props) {
           <p>Create lasting presences for the trees around you.</p>
         </div>
         <div className="container">
-          <div className="card">
-            {profile ? (
-              <form action="/logout" method="post" className="session-form">
-                <div>
-                  Welcome back,{' '}
-                  <strong>{profile.displayName || 'treekeeper'}</strong>.
-                </div>
-                <div>
-                  <button type="submit">Log out</button>
-                </div>
-              </form>
-            ) : (
-              <div className="session-form">
-                <div>
-                  <a href="/login">Log in</a> to create a tree presence!
-                </div>
-                <div>
-                  <a href="/login" className="button">
-                    Log in
-                  </a>
-                </div>
-              </div>
-            )}
-          </div>
-          {profile ? (
+          {user ? (
             <a href="/seed-tree" className="seed-cta">
               Seed a tree
             </a>
-          ) : null}
+          ) : (
+            <p className="login-prompt">
+              <a href="/login">Log in</a> to seed a tree presence.
+            </p>
+          )}
 
           <h2 className="section-title">Recent Trees</h2>
           {trees.length === 0 ? (
@@ -67,7 +48,7 @@ export function Home({ trees, treeCounts, didHandleMap, profile }: Props) {
                     {tree.imageCid ? (
                       <img
                         className="tree-card-image"
-                        src={`https://cdn.bsky.app/img/feed_fullsize/plain/${tree.authorDid}/${tree.imageCid}@jpeg`}
+                        src={imageUrl(tree.authorDid, tree.imageCid)}
                         alt={tree.name}
                       />
                     ) : (
