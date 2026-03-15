@@ -20,7 +20,7 @@ import * as Tree from '#/lexicon/types/com/treeappreciation/tree'
 import * as Inscription from '#/lexicon/types/com/treeappreciation/inscription'
 import { handler } from '#/lib/http'
 import { slugify, findUniqueSlug } from '#/lib/slug'
-import { ifString } from '#/lib/util'
+import { ifString, imageUrl } from '#/lib/util'
 import { page } from '#/lib/view'
 import { Home } from '#/pages/home'
 import { SeedTree } from '#/pages/seed-tree'
@@ -28,6 +28,51 @@ import { TreeDetail } from '#/pages/tree-detail'
 import { Login } from '#/pages/login'
 
 const MAX_BLOB_SIZE = 1_000_000
+const DEFAULT_LIMIT = 50
+const MAX_LIMIT = 100
+
+function wantsJson(req: Request): boolean {
+  const accept = req.accepts(['html', 'json'])
+  return accept === 'json'
+}
+
+function treeToJson(
+  tree: import('#/db').Tree,
+  handle: string | undefined,
+  inscriptionCount?: number,
+) {
+  return {
+    uri: tree.uri,
+    name: tree.name,
+    slug: tree.slug,
+    description: tree.description,
+    authorDid: tree.authorDid,
+    authorHandle: handle ?? null,
+    imageUrl: tree.imageCid ? imageUrl(tree.authorDid, tree.imageCid) : null,
+    latitude: tree.latitude,
+    longitude: tree.longitude,
+    inscriptionCount: inscriptionCount ?? undefined,
+    createdAt: tree.createdAt,
+    indexedAt: tree.indexedAt,
+  }
+}
+
+function inscriptionToJson(
+  inscription: import('#/db').Inscription,
+  handle: string | undefined,
+) {
+  return {
+    uri: inscription.uri,
+    authorDid: inscription.authorDid,
+    authorHandle: handle ?? null,
+    text: inscription.text,
+    imageUrl: inscription.imageCid
+      ? imageUrl(inscription.authorDid, inscription.imageCid)
+      : null,
+    photoTakenAt: inscription.photoTakenAt,
+    createdAt: inscription.createdAt,
+  }
+}
 
 // In-memory store for mock image blobs (only used when MOCK_WRITES is enabled)
 const mockImageStore = new Map<string, { data: Buffer; mime: string }>()
@@ -354,15 +399,31 @@ export const createRouter = (ctx: AppContext): RequestListener => {
   router.get(
     '/',
     handler(async (req, res) => {
-      const agent = await getSessionAgent(req, res, ctx)
+      const isJson = wantsJson(req)
+
+      // Parse pagination params (used for both HTML and JSON, but most useful for JSON)
+      const limit = Math.min(
+        Math.max(parseInt(req.query.limit as string) || DEFAULT_LIMIT, 1),
+        MAX_LIMIT,
+      )
+      const cursor = ifString(req.query.cursor as string)
+
+      const agent = isJson ? null : await getSessionAgent(req, res, ctx)
 
       // Fetch trees with inscription counts
-      const trees = await ctx.db
+      let query = ctx.db
         .selectFrom('tree')
         .selectAll('tree')
         .orderBy('tree.indexedAt', 'desc')
-        .limit(50)
-        .execute()
+        .limit(limit + 1) // fetch one extra to determine if there's a next page
+
+      if (cursor) {
+        query = query.where('tree.indexedAt', '<', cursor)
+      }
+
+      const rows = await query.execute()
+      const hasMore = rows.length > limit
+      const trees = hasMore ? rows.slice(0, limit) : rows
 
       // Get inscription counts for these trees
       const treeCounts: Record<string, number> = {}
@@ -386,6 +447,16 @@ export const createRouter = (ctx: AppContext): RequestListener => {
       const didHandleMap = await ctx.resolver.resolveDidsToHandles(
         trees.map((t) => t.authorDid),
       )
+
+      if (isJson) {
+        res.setHeader('Vary', 'Accept')
+        return res.json({
+          trees: trees.map((t) =>
+            treeToJson(t, didHandleMap[t.authorDid], treeCounts[t.uri] ?? 0),
+          ),
+          cursor: hasMore ? trees[trees.length - 1].indexedAt : undefined,
+        })
+      }
 
       let user: UserInfo | undefined
       if (agent) {
@@ -428,7 +499,8 @@ export const createRouter = (ctx: AppContext): RequestListener => {
   router.get(
     '/tree/:slug',
     handler(async (req, res) => {
-      const agent = await getSessionAgent(req, res, ctx)
+      const isJson = wantsJson(req)
+      const agent = isJson ? null : await getSessionAgent(req, res, ctx)
 
       const tree = await ctx.db
         .selectFrom('tree')
@@ -437,6 +509,9 @@ export const createRouter = (ctx: AppContext): RequestListener => {
         .executeTakeFirst()
 
       if (!tree) {
+        if (isJson) {
+          return res.status(404).json({ error: 'Tree not found' })
+        }
         return res.status(404).type('html').send('<h1>Tree not found</h1>')
       }
 
@@ -454,6 +529,16 @@ export const createRouter = (ctx: AppContext): RequestListener => {
       ]
       if (agent) allDids.push(agent.assertDid)
       const didHandleMap = await ctx.resolver.resolveDidsToHandles(allDids)
+
+      if (isJson) {
+        res.setHeader('Vary', 'Accept')
+        return res.json({
+          tree: treeToJson(tree, didHandleMap[tree.authorDid]),
+          inscriptions: inscriptions.map((i) =>
+            inscriptionToJson(i, didHandleMap[i.authorDid]),
+          ),
+        })
+      }
 
       let user: UserInfo | undefined
       if (agent) {
