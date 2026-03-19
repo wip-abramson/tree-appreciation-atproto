@@ -395,60 +395,55 @@ export const createRouter = (ctx: AppContext): RequestListener => {
     }),
   )
 
-  // Homepage — list recent trees with inscription counts
+  // Homepage — JSON: paginated tree list; HTML: single tree offering
   router.get(
     '/',
     handler(async (req, res) => {
       const isJson = wantsJson(req)
 
-      // Parse pagination params (used for both HTML and JSON, but most useful for JSON)
-      const limit = Math.min(
-        Math.max(parseInt(req.query.limit as string) || DEFAULT_LIMIT, 1),
-        MAX_LIMIT,
-      )
-      const cursor = ifString(req.query.cursor as string)
-
-      const agent = isJson ? null : await getSessionAgent(req, res, ctx)
-
-      // Fetch trees with inscription counts
-      let query = ctx.db
-        .selectFrom('tree')
-        .selectAll('tree')
-        .orderBy('tree.indexedAt', 'desc')
-        .limit(limit + 1) // fetch one extra to determine if there's a next page
-
-      if (cursor) {
-        query = query.where('tree.indexedAt', '<', cursor)
-      }
-
-      const rows = await query.execute()
-      const hasMore = rows.length > limit
-      const trees = hasMore ? rows.slice(0, limit) : rows
-
-      // Get inscription counts for these trees
-      const treeCounts: Record<string, number> = {}
-      if (trees.length > 0) {
-        const counts = await ctx.db
-          .selectFrom('inscription')
-          .select(['tree', ctx.db.fn.count('uri').as('count')])
-          .where(
-            'tree',
-            'in',
-            trees.map((t) => t.uri),
-          )
-          .groupBy('tree')
-          .execute()
-        for (const row of counts) {
-          treeCounts[row.tree] = Number(row.count)
-        }
-      }
-
-      // Map user DIDs to their domain-name handles
-      const didHandleMap = await ctx.resolver.resolveDidsToHandles(
-        trees.map((t) => t.authorDid),
-      )
-
+      // ── JSON API branch (paginated listing) ──
       if (isJson) {
+        const limit = Math.min(
+          Math.max(parseInt(req.query.limit as string) || DEFAULT_LIMIT, 1),
+          MAX_LIMIT,
+        )
+        const cursor = ifString(req.query.cursor as string)
+
+        let query = ctx.db
+          .selectFrom('tree')
+          .selectAll('tree')
+          .orderBy('tree.indexedAt', 'desc')
+          .limit(limit + 1)
+
+        if (cursor) {
+          query = query.where('tree.indexedAt', '<', cursor)
+        }
+
+        const rows = await query.execute()
+        const hasMore = rows.length > limit
+        const trees = hasMore ? rows.slice(0, limit) : rows
+
+        const treeCounts: Record<string, number> = {}
+        if (trees.length > 0) {
+          const counts = await ctx.db
+            .selectFrom('inscription')
+            .select(['tree', ctx.db.fn.count('uri').as('count')])
+            .where(
+              'tree',
+              'in',
+              trees.map((t) => t.uri),
+            )
+            .groupBy('tree')
+            .execute()
+          for (const row of counts) {
+            treeCounts[row.tree] = Number(row.count)
+          }
+        }
+
+        const didHandleMap = await ctx.resolver.resolveDidsToHandles(
+          trees.map((t) => t.authorDid),
+        )
+
         res.setHeader('Vary', 'Accept')
         return res.json({
           trees: trees.map((t) =>
@@ -457,6 +452,10 @@ export const createRouter = (ctx: AppContext): RequestListener => {
           cursor: hasMore ? trees[trees.length - 1].indexedAt : undefined,
         })
       }
+
+      // ── HTML branch ──
+      const agent = await getSessionAgent(req, res, ctx)
+      const searchQuery = ifString(req.query.q as string)?.trim()
 
       let user: UserInfo | undefined
       if (agent) {
@@ -480,18 +479,100 @@ export const createRouter = (ctx: AppContext): RequestListener => {
         user = buildUserInfo(agent.assertDid, profile, handleMap)
       }
 
-      res
-        .type('html')
-        .send(
+      // Search mode: return matching trees as a simple list
+      if (searchQuery) {
+        const results = await ctx.db
+          .selectFrom('tree')
+          .selectAll()
+          .where('name', 'like', `%${searchQuery}%`)
+          .orderBy('name', 'asc')
+          .limit(20)
+          .execute()
+
+        const resultDids = results.map((t) => t.authorDid)
+        const didHandleMap = resultDids.length
+          ? await ctx.resolver.resolveDidsToHandles(resultDids)
+          : {}
+
+        // Get inscription counts for search results
+        const treeCounts: Record<string, number> = {}
+        if (results.length > 0) {
+          const counts = await ctx.db
+            .selectFrom('inscription')
+            .select(['tree', ctx.db.fn.count('uri').as('count')])
+            .where(
+              'tree',
+              'in',
+              results.map((t) => t.uri),
+            )
+            .groupBy('tree')
+            .execute()
+          for (const row of counts) {
+            treeCounts[row.tree] = Number(row.count)
+          }
+        }
+
+        return res.type('html').send(
           page(
             <Home
-              trees={trees}
+              searchQuery={searchQuery}
+              searchResults={results}
               treeCounts={treeCounts}
               didHandleMap={didHandleMap}
               user={user}
             />,
           ),
         )
+      }
+
+      // Offering mode: surface one tree
+      const treeCount = await ctx.db
+        .selectFrom('tree')
+        .select(ctx.db.fn.count('uri').as('count'))
+        .executeTakeFirst()
+      const totalTrees = Number(treeCount?.count ?? 0)
+
+      if (totalTrees === 0) {
+        return res.type('html').send(page(<Home user={user} />))
+      }
+
+      // Pick a random tree, preferring ones with inscriptions
+      const offset = Math.floor(Math.random() * totalTrees)
+      const tree = await ctx.db
+        .selectFrom('tree')
+        .selectAll()
+        .orderBy('indexedAt', 'desc')
+        .limit(1)
+        .offset(offset)
+        .executeTakeFirst()
+
+      if (!tree) {
+        return res.type('html').send(page(<Home user={user} />))
+      }
+
+      const inscriptionCount = Number(
+        (
+          await ctx.db
+            .selectFrom('inscription')
+            .select(ctx.db.fn.count('uri').as('count'))
+            .where('tree', '=', tree.uri)
+            .executeTakeFirst()
+        )?.count ?? 0,
+      )
+
+      const didHandleMap = await ctx.resolver.resolveDidsToHandles([tree.authorDid])
+
+      return res.type('html').send(
+        page(
+          <Home
+            tree={tree}
+            treeHandle={didHandleMap[tree.authorDid]}
+            inscriptionCount={inscriptionCount}
+            totalTrees={totalTrees}
+            user={user}
+          />,
+        ),
+      )
     }),
   )
 

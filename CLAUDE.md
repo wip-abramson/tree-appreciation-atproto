@@ -55,15 +55,28 @@ The app uses the `com.treeappreciation.*` namespace with two record types: `com.
 
 `#/*` maps to `src/*` (configured in tsconfig.json). Use `#/db` instead of relative paths like `../../db`.
 
+## Design Direction
+
+Tree Appreciation is a **presence practice scaffold**, not a social platform. See `DESIGN_PRINCIPLES.md` for the full ethos. The app should function as a "quiet companion" that deepens connection to physical place, not a destination that captures attention. Design for **embodied experience** (human embedded in natural world) rather than user experience (clicks and swipes).
+
+Before adding any feature, apply the 6 guiding questions from `DESIGN_PRINCIPLES.md` section 11.
+
+### Homepage as Offering (implemented)
+The homepage shows a single randomly-selected tree as an offering rather than a browsable feed. Search is available for intentional finding. This reflects the principle: "encounter over consumption."
+
+### JSON Content Negotiation (implemented)
+`GET /` and `GET /tree/:slug` return JSON when `Accept: application/json` is sent. The tree listing supports `?limit=` and `?cursor=` pagination. This enables integration with external feeds and tooling.
+
 ## Current Work Streams
 
-Two streams to pick up:
+### Stream 1: Inscription Threshold
+Add a gentle pause/breath moment before the inscription form appears on tree detail. Shift from "posting" to "offering." The principles say inscription should "feel like crossing a threshold."
 
-### Stream 1: Image-centric inscriptions
-Change inscriptions to be image-centric rather than text-centric. This includes updating the inscription lexicon to support image blobs (similar to how `com.treeappreciation.tree` already handles images), and experimenting with how inscriptions render on the tree detail page — exploring visual treatments for the "memory rings" display.
+### Stream 2: Memory as Encounter
+On the tree detail page, surface one inscription as an offering instead of showing all chronologically. Total ring count communicates depth. Full list behind a deliberate "see all rings" action. Reflects: "memory arrives like a gift."
 
-### Stream 2: GPS extraction feedback in the form
-When a user uploads a photo in the "Seed Tree Presence" form, if GPS coordinates are extracted from the image EXIF data, show feedback in the form indicating that coordinates were found. Currently the extraction happens server-side on submit with no client-side indication. This could involve client-side JavaScript to read EXIF on file select and populate/indicate the lat/lng fields, or a two-step server interaction.
+### Stream 3: Image-centric inscriptions
+Change inscriptions to be image-centric rather than text-centric. This includes updating the inscription lexicon to support image blobs (similar to how `com.treeappreciation.tree` already handles images), and experimenting with how inscriptions render on the tree detail page.
 
 ## Environment Setup
 
