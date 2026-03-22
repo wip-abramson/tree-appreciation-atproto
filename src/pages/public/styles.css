@@ -1059,6 +1059,109 @@ button:hover,
   background: none;
 }
 
+/* ============================================
+   Zone 5: Fediverse echoes
+   ============================================ */
+
+.echoes-section {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 0 20px 3rem;
+}
+
+.echoes-header {
+  font-family: 'Newsreader', Georgia, serif;
+  font-weight: 400;
+  font-size: 1.15rem;
+  color: var(--bark-500);
+  margin-bottom: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--bark-200);
+}
+
+.echoes-header span {
+  font-family: 'DM Mono', 'Courier New', monospace;
+  font-size: 0.8rem;
+  color: var(--bark-400);
+  font-weight: 400;
+}
+
+.echoes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.echo-item {
+  padding: 10px 14px;
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0.6);
+  border-left: 3px solid var(--bark-200);
+}
+
+.echo-item--note {
+  border-left-color: var(--green-300);
+}
+
+.echo-item--follow {
+  border-left-color: var(--green-200);
+}
+
+.echo-item--like {
+  border-left-color: #e8b44a;
+}
+
+.echo-item--announce {
+  border-left-color: #7aa3cc;
+}
+
+.echo-actor {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.echo-actor-link {
+  color: var(--bark-600);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.echo-actor-link:hover {
+  text-decoration: underline;
+  color: var(--green-500);
+}
+
+.echo-label {
+  font-size: 0.8rem;
+  color: var(--bark-400);
+  font-style: italic;
+}
+
+.echo-content {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--bark-600);
+}
+
+.echo-image {
+  max-width: 100%;
+  max-height: 240px;
+  object-fit: cover;
+  border-radius: 4px;
+  margin-top: 6px;
+}
+
+.echo-date {
+  display: block;
+  font-family: 'DM Mono', 'Courier New', monospace;
+  font-size: 0.72rem;
+  color: var(--bark-300);
+  margin-top: 4px;
+}
+
 /* Mock-writes dev badge */
 .mock-writes-badge {
   position: fixed;

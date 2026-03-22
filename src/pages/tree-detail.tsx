@@ -1,4 +1,5 @@
 import type { Tree, Inscription } from '#/db'
+import type { Echo } from '#/routes'
 import { imageUrl as buildImageUrl } from '#/lib/util'
 import { Shell } from './shell'
 
@@ -8,6 +9,7 @@ type Props = {
   didHandleMap: Record<string, string | undefined>
   currentDid: string | null
   user?: { did: string; displayName?: string; handle?: string; avatarUrl?: string }
+  echoes?: Echo[]
 }
 
 const imagePreviewScript = `
@@ -228,12 +230,61 @@ const headContent = (
   </>
 )
 
+function actorDisplayName(echo: Echo): string {
+  if (echo.actorName) return echo.actorName
+  // Extract a readable name from the actor URL
+  try {
+    const url = new URL(echo.actorId)
+    const parts = url.pathname.split('/').filter(Boolean)
+    return parts[parts.length - 1] || url.hostname
+  } catch {
+    return echo.actorId
+  }
+}
+
+function echoLabel(type: Echo['type']): string {
+  switch (type) {
+    case 'follow':
+      return 'is watching this tree'
+    case 'like':
+      return 'appreciates this tree'
+    case 'announce':
+      return 'shared this tree'
+    case 'note':
+      return ''
+  }
+}
+
+function EchoItem({ echo }: { echo: Echo }) {
+  const name = actorDisplayName(echo)
+  const label = echoLabel(echo.type)
+
+  return (
+    <div className={`echo-item echo-item--${echo.type}`}>
+      <div className="echo-actor">
+        <a href={echo.actorId} className="echo-actor-link" target="_blank" rel="noopener noreferrer">
+          {name}
+        </a>
+        {label ? <span className="echo-label">{label}</span> : null}
+      </div>
+      {echo.content ? (
+        <p className="echo-content" dangerouslySetInnerHTML={{ __html: echo.content }} />
+      ) : null}
+      {echo.imageUrl ? (
+        <img className="echo-image" src={echo.imageUrl} alt="" />
+      ) : null}
+      <span className="echo-date">{formatDate(echo.receivedAt)}</span>
+    </div>
+  )
+}
+
 export function TreeDetail({
   tree,
   inscriptions,
   didHandleMap,
   currentDid,
   user,
+  echoes = [],
 }: Props) {
   const authorHandle = didHandleMap[tree.authorDid] || tree.authorDid
   const imageUrl = tree.imageCid
@@ -420,6 +471,23 @@ export function TreeDetail({
           </div>
         )}
       </div>
+      {/* Zone 5: Fediverse echoes */}
+      {echoes.length > 0 ? (
+        <div className="echoes-section">
+          <h2 className="echoes-header">
+            Echoes from the fediverse{' '}
+            <span>
+              {echoes.length} echo{echoes.length !== 1 ? 'es' : ''}
+            </span>
+          </h2>
+          <div className="echoes-list">
+            {echoes.map((echo, i) => (
+              <EchoItem key={i} echo={echo} />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <script
         dangerouslySetInnerHTML={{ __html: heroOrientationScript }}
       />

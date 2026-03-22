@@ -15,6 +15,9 @@ import {
 export type DatabaseSchema = {
   tree: Tree
   inscription: Inscription
+  inbox_activity: InboxActivity
+  follower: Follower
+  ap_key: ApKey
   auth_session: AuthSession
   auth_state: AuthState
 }
@@ -41,6 +44,30 @@ export type Inscription = {
   photoTakenAt: string | null
   createdAt: string
   indexedAt: string
+}
+
+export type InboxActivity = {
+  id: string
+  treeSlug: string
+  actorId: string | null
+  type: string
+  body: string
+  receivedAt: string
+}
+
+export type ApKey = {
+  id: string
+  publicKeyPem: string
+  privateKeyPem: string
+  createdAt: string
+}
+
+export type Follower = {
+  actorId: string
+  treeSlug: string
+  inbox: string
+  followActivityId: string | null
+  createdAt: string
 }
 
 export type AuthSession = {
@@ -232,6 +259,70 @@ migrations['005'] = {
       .on('tree')
       .column('slug')
       .execute()
+  },
+}
+
+migrations['006'] = {
+  async up(db: Kysely<unknown>) {
+    await db.schema
+      .createTable('inbox_activity')
+      .addColumn('id', 'varchar', (col) => col.primaryKey())
+      .addColumn('treeSlug', 'varchar', (col) => col.notNull())
+      .addColumn('actorId', 'varchar')
+      .addColumn('type', 'varchar', (col) => col.notNull())
+      .addColumn('body', 'text', (col) => col.notNull())
+      .addColumn('receivedAt', 'varchar', (col) => col.notNull())
+      .execute()
+    await db.schema
+      .createIndex('inbox_activity_tree_idx')
+      .on('inbox_activity')
+      .column('treeSlug')
+      .execute()
+  },
+  async down(db: Kysely<unknown>) {
+    await db.schema.dropTable('inbox_activity').execute()
+  },
+}
+
+migrations['007a'] = {
+  async up(db: Kysely<unknown>) {
+    await db.schema
+      .createTable('ap_key')
+      .addColumn('id', 'varchar', (col) => col.primaryKey())
+      .addColumn('publicKeyPem', 'text', (col) => col.notNull())
+      .addColumn('privateKeyPem', 'text', (col) => col.notNull())
+      .addColumn('createdAt', 'varchar', (col) => col.notNull())
+      .execute()
+  },
+  async down(db: Kysely<unknown>) {
+    await db.schema.dropTable('ap_key').execute()
+  },
+}
+
+migrations['007b'] = {
+  async up(db: Kysely<unknown>) {
+    await db.schema
+      .createTable('follower')
+      .addColumn('actorId', 'varchar', (col) => col.notNull())
+      .addColumn('treeSlug', 'varchar', (col) => col.notNull())
+      .addColumn('inbox', 'varchar', (col) => col.notNull())
+      .addColumn('followActivityId', 'varchar')
+      .addColumn('createdAt', 'varchar', (col) => col.notNull())
+      .execute()
+    await db.schema
+      .createIndex('follower_pk')
+      .on('follower')
+      .columns(['actorId', 'treeSlug'])
+      .unique()
+      .execute()
+    await db.schema
+      .createIndex('follower_tree_idx')
+      .on('follower')
+      .column('treeSlug')
+      .execute()
+  },
+  async down(db: Kysely<unknown>) {
+    await db.schema.dropTable('follower').execute()
   },
 }
 

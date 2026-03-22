@@ -5,6 +5,8 @@ import { gps as exifrGps, parse as exifrParse } from 'exifr'
 import express, { Request, Response } from 'express'
 import { getIronSession } from 'iron-session'
 import multer from 'multer'
+import crypto from 'node:crypto'
+import { signRequest, verifyRequest } from '#/lib/http-signatures'
 import type {
   IncomingMessage,
   RequestListener,
@@ -31,9 +33,19 @@ const MAX_BLOB_SIZE = 1_000_000
 const DEFAULT_LIMIT = 50
 const MAX_LIMIT = 100
 
-function wantsJson(req: Request): boolean {
-  const accept = req.accepts(['html', 'json'])
-  return accept === 'json'
+type JsonMode = false | 'json' | 'activity+json'
+
+function wantsJson(req: Request): JsonMode {
+  // Check for ActivityStreams / JSON-LD accept types first
+  const accept = req.get('accept') ?? ''
+  if (
+    accept.includes('application/activity+json') ||
+    accept.includes('application/ld+json')
+  ) {
+    return 'activity+json'
+  }
+  const negotiated = req.accepts(['html', 'json'])
+  return negotiated === 'json' ? 'json' : false
 }
 
 function treeToJson(
@@ -71,6 +83,197 @@ function inscriptionToJson(
       : null,
     photoTakenAt: inscription.photoTakenAt,
     createdAt: inscription.createdAt,
+  }
+}
+
+function treeToActivityStreams(
+  tree: ReturnType<typeof treeToJson>,
+  baseUrl: string,
+  publicKeyPem?: string,
+) {
+  const treeUrl = `${baseUrl}/tree/${tree.slug}`
+  const obj: Record<string, unknown> = {
+    type: 'Place',
+    id: treeUrl,
+    url: treeUrl,
+    name: tree.name,
+    published: tree.createdAt,
+    inbox: `${treeUrl}/inbox`,
+    outbox: `${treeUrl}/outbox`,
+    followers: `${treeUrl}/followers`,
+    attributedTo: tree.authorHandle
+      ? `https://bsky.app/profile/${tree.authorHandle}`
+      : tree.authorDid,
+  }
+  if (publicKeyPem) {
+    obj.publicKey = {
+      id: `${treeUrl}#main-key`,
+      owner: treeUrl,
+      publicKeyPem,
+    }
+  }
+  if (tree.description) obj.summary = tree.description
+  if (tree.imageUrl) {
+    obj.image = {
+      type: 'Image',
+      url: tree.imageUrl,
+      mediaType: 'image/jpeg',
+    }
+  }
+  if (tree.latitude != null && tree.longitude != null) {
+    obj.location = {
+      type: 'Place',
+      latitude: parseFloat(tree.latitude),
+      longitude: parseFloat(tree.longitude),
+    }
+  }
+  return obj
+}
+
+function inscriptionToActivityStreams(
+  inscription: ReturnType<typeof inscriptionToJson>,
+  tree: ReturnType<typeof treeToJson>,
+  baseUrl: string,
+) {
+  const obj: Record<string, unknown> = {
+    type: 'Note',
+    id: inscription.uri,
+    published: inscription.createdAt,
+    inReplyTo: `${baseUrl}/tree/${tree.slug}`,
+    attributedTo: inscription.authorHandle
+      ? `https://bsky.app/profile/${inscription.authorHandle}`
+      : inscription.authorDid,
+  }
+  if (inscription.text) obj.content = inscription.text
+  if (inscription.imageUrl) {
+    obj.image = {
+      type: 'Image',
+      url: inscription.imageUrl,
+      mediaType: 'image/jpeg',
+    }
+  }
+  return obj
+}
+
+export type Echo = {
+  actorId: string
+  actorName: string | null
+  content: string | null
+  imageUrl: string | null
+  type: 'note' | 'like' | 'announce' | 'follow'
+  receivedAt: string
+}
+
+function parseEcho(
+  activity: Record<string, unknown>,
+  receivedAt: string,
+): Echo | null {
+  const actorRaw = activity.actor
+  const actorId =
+    typeof actorRaw === 'string'
+      ? actorRaw
+      : typeof actorRaw === 'object' && actorRaw !== null && 'id' in actorRaw
+        ? String((actorRaw as Record<string, unknown>).id)
+        : null
+  if (!actorId) return null
+
+  const actorName =
+    typeof actorRaw === 'object' && actorRaw !== null && 'name' in actorRaw
+      ? String((actorRaw as Record<string, unknown>).name)
+      : null
+
+  const type = String(activity.type)
+
+  if (type === 'Follow') {
+    return { actorId, actorName, content: null, imageUrl: null, type: 'follow', receivedAt }
+  }
+
+  if (type === 'Like' || type === 'Announce') {
+    return {
+      actorId,
+      actorName,
+      content: null,
+      imageUrl: null,
+      type: type === 'Like' ? 'like' : 'announce',
+      receivedAt,
+    }
+  }
+
+  // Create with an inner object (Note, Article, etc.)
+  if (type === 'Create' && typeof activity.object === 'object' && activity.object !== null) {
+    const obj = activity.object as Record<string, unknown>
+    const content = typeof obj.content === 'string' ? obj.content : null
+    let imageUrl: string | null = null
+    if (typeof obj.image === 'object' && obj.image !== null) {
+      const img = obj.image as Record<string, unknown>
+      if (typeof img.url === 'string') imageUrl = img.url
+    }
+    if (!content && !imageUrl) return null
+    return { actorId, actorName, content, imageUrl, type: 'note', receivedAt }
+  }
+
+  // A bare Note/Article posted directly
+  if ((type === 'Note' || type === 'Article') && typeof activity.content === 'string') {
+    return {
+      actorId,
+      actorName,
+      content: activity.content as string,
+      imageUrl: null,
+      type: 'note',
+      receivedAt,
+    }
+  }
+
+  return null
+}
+
+/**
+ * Fetch a remote ActivityPub actor document and return their inbox URL.
+ */
+async function resolveActorInbox(actorId: string): Promise<string | null> {
+  try {
+    const res = await fetch(actorId, {
+      headers: { Accept: 'application/activity+json, application/ld+json' },
+    })
+    if (!res.ok) return null
+    const doc = (await res.json()) as Record<string, unknown>
+    if (typeof doc.inbox === 'string') return doc.inbox
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Deliver a signed activity to a remote inbox.
+ * Returns true if the remote accepted it (2xx).
+ */
+async function deliverActivity(
+  inboxUrl: string,
+  activity: Record<string, unknown>,
+  signing: { keyId: string; privateKeyPem: string },
+): Promise<boolean> {
+  try {
+    const body = JSON.stringify(activity)
+    const sigHeaders = signRequest({
+      keyId: signing.keyId,
+      privateKeyPem: signing.privateKeyPem,
+      method: 'POST',
+      url: inboxUrl,
+      body,
+    })
+
+    const res = await fetch(inboxUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/activity+json',
+        ...sigHeaders,
+      },
+      body,
+    })
+    return res.ok
+  } catch {
+    return false
   }
 }
 
@@ -399,7 +602,7 @@ export const createRouter = (ctx: AppContext): RequestListener => {
   router.get(
     '/',
     handler(async (req, res) => {
-      const isJson = wantsJson(req)
+      const jsonMode = wantsJson(req)
 
       // Parse pagination params (used for both HTML and JSON, but most useful for JSON)
       const limit = Math.min(
@@ -408,7 +611,7 @@ export const createRouter = (ctx: AppContext): RequestListener => {
       )
       const cursor = ifString(req.query.cursor as string)
 
-      const agent = isJson ? null : await getSessionAgent(req, res, ctx)
+      const agent = jsonMode ? null : await getSessionAgent(req, res, ctx)
 
       // Fetch trees with inscription counts
       let query = ctx.db
@@ -448,8 +651,25 @@ export const createRouter = (ctx: AppContext): RequestListener => {
         trees.map((t) => t.authorDid),
       )
 
-      if (isJson) {
+      if (jsonMode) {
         res.setHeader('Vary', 'Accept')
+        if (jsonMode === 'activity+json') {
+          const baseUrl = env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`
+          res.setHeader('Content-Type', 'application/activity+json; charset=utf-8')
+          return res.json({
+            '@context': 'https://www.w3.org/ns/activitystreams',
+            type: 'OrderedCollection',
+            id: `${baseUrl}/`,
+            totalItems: trees.length,
+            orderedItems: trees.map((t) => {
+              const tJson = treeToJson(t, didHandleMap[t.authorDid], treeCounts[t.uri] ?? 0)
+              return treeToActivityStreams(tJson, baseUrl, ctx.apKey.publicKeyPem)
+            }),
+            ...(hasMore
+              ? { next: `${baseUrl}/?cursor=${encodeURIComponent(trees[trees.length - 1].indexedAt)}` }
+              : {}),
+          })
+        }
         return res.json({
           trees: trees.map((t) =>
             treeToJson(t, didHandleMap[t.authorDid], treeCounts[t.uri] ?? 0),
@@ -499,8 +719,8 @@ export const createRouter = (ctx: AppContext): RequestListener => {
   router.get(
     '/tree/:slug',
     handler(async (req, res) => {
-      const isJson = wantsJson(req)
-      const agent = isJson ? null : await getSessionAgent(req, res, ctx)
+      const jsonMode = wantsJson(req)
+      const agent = jsonMode ? null : await getSessionAgent(req, res, ctx)
 
       const tree = await ctx.db
         .selectFrom('tree')
@@ -509,7 +729,7 @@ export const createRouter = (ctx: AppContext): RequestListener => {
         .executeTakeFirst()
 
       if (!tree) {
-        if (isJson) {
+        if (jsonMode) {
           return res.status(404).json({ error: 'Tree not found' })
         }
         return res.status(404).type('html').send('<h1>Tree not found</h1>')
@@ -530,8 +750,26 @@ export const createRouter = (ctx: AppContext): RequestListener => {
       if (agent) allDids.push(agent.assertDid)
       const didHandleMap = await ctx.resolver.resolveDidsToHandles(allDids)
 
-      if (isJson) {
+      if (jsonMode) {
         res.setHeader('Vary', 'Accept')
+        if (jsonMode === 'activity+json') {
+          const baseUrl = env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`
+          const tJson = treeToJson(tree, didHandleMap[tree.authorDid])
+          const asTree = treeToActivityStreams(tJson, baseUrl, ctx.apKey.publicKeyPem)
+          res.setHeader('Content-Type', 'application/activity+json; charset=utf-8')
+          return res.json({
+            '@context': 'https://www.w3.org/ns/activitystreams',
+            ...asTree,
+            replies: {
+              type: 'OrderedCollection',
+              totalItems: inscriptions.length,
+              orderedItems: inscriptions.map((i) => {
+                const iJson = inscriptionToJson(i, didHandleMap[i.authorDid])
+                return inscriptionToActivityStreams(iJson, tJson, baseUrl)
+              }),
+            },
+          })
+        }
         return res.json({
           tree: treeToJson(tree, didHandleMap[tree.authorDid]),
           inscriptions: inscriptions.map((i) =>
@@ -539,6 +777,25 @@ export const createRouter = (ctx: AppContext): RequestListener => {
           ),
         })
       }
+
+      // Fetch fediverse echoes (inbox activities worth displaying)
+      const inboxActivities = await ctx.db
+        .selectFrom('inbox_activity')
+        .selectAll()
+        .where('treeSlug', '=', tree.slug)
+        .orderBy('receivedAt', 'asc')
+        .execute()
+
+      const echoes = inboxActivities
+        .map((a) => {
+          try {
+            const parsed = JSON.parse(a.body)
+            return parseEcho(parsed, a.receivedAt)
+          } catch {
+            return null
+          }
+        })
+        .filter((e): e is NonNullable<typeof e> => e !== null)
 
       let user: UserInfo | undefined
       if (agent) {
@@ -569,9 +826,257 @@ export const createRouter = (ctx: AppContext): RequestListener => {
             didHandleMap={didHandleMap}
             currentDid={agent?.did ?? null}
             user={user}
+            echoes={echoes}
           />,
         ),
       )
+    }),
+  )
+
+  // ActivityPub inbox for a tree
+  router.post(
+    '/tree/:slug/inbox',
+    express.json({ type: ['application/json', 'application/activity+json', 'application/ld+json'] }),
+    handler(async (req, res) => {
+      const tree = await ctx.db
+        .selectFrom('tree')
+        .select(['uri', 'slug'])
+        .where('slug', '=', req.params.slug)
+        .executeTakeFirst()
+
+      if (!tree) {
+        return res.status(404).json({ error: 'Tree not found' })
+      }
+
+      const body = req.body
+      if (!body || typeof body !== 'object' || !body.type) {
+        return res.status(400).json({ error: 'Invalid activity' })
+      }
+
+      // Verify HTTP signature if present
+      const rawBody = JSON.stringify(body)
+      const sigHeader = req.get('signature')
+      if (sigHeader) {
+        const reqHeaders: Record<string, string> = {}
+        for (const h of ['host', 'date', 'digest', 'signature', 'content-type']) {
+          const v = req.get(h)
+          if (v) reqHeaders[h] = v
+        }
+        const verification = await verifyRequest({
+          method: req.method,
+          path: req.originalUrl,
+          headers: reqHeaders,
+          body: rawBody,
+        })
+        if (!verification.verified) {
+          ctx.logger.warn(
+            { keyId: verification.keyId, error: verification.error },
+            'inbox signature verification failed',
+          )
+          return res.status(401).json({ error: 'Signature verification failed' })
+        }
+        ctx.logger.info({ keyId: verification.keyId }, 'inbox signature verified')
+      } else {
+        ctx.logger.debug('inbox request has no Signature header (unsigned)')
+      }
+
+      const activityId =
+        (typeof body.id === 'string' && body.id) ||
+        `urn:uuid:${crypto.randomUUID()}`
+
+      const actorId =
+        typeof body.actor === 'string'
+          ? body.actor
+          : typeof body.actor?.id === 'string'
+            ? body.actor.id
+            : null
+
+      // Store all incoming activities
+      try {
+        await ctx.db
+          .insertInto('inbox_activity')
+          .values({
+            id: activityId,
+            treeSlug: tree.slug,
+            actorId,
+            type: String(body.type),
+            body: JSON.stringify(body),
+            receivedAt: new Date().toISOString(),
+          })
+          .onConflict((oc) => oc.doNothing())
+          .execute()
+      } catch (err) {
+        ctx.logger.warn({ err }, 'failed to store inbox activity')
+      }
+
+      ctx.logger.info(
+        { treeSlug: tree.slug, type: body.type, actor: actorId },
+        'received inbox activity',
+      )
+
+      const baseUrl = env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`
+      const treeUrl = `${baseUrl}/tree/${tree.slug}`
+
+      // Handle Follow
+      if (body.type === 'Follow' && actorId) {
+        // Resolve the follower's inbox so we can deliver the Accept
+        const followerInbox = await resolveActorInbox(actorId)
+
+        if (followerInbox) {
+          // Store the follower
+          try {
+            await ctx.db
+              .insertInto('follower')
+              .values({
+                actorId,
+                treeSlug: tree.slug,
+                inbox: followerInbox,
+                followActivityId: activityId,
+                createdAt: new Date().toISOString(),
+              })
+              .onConflict((oc) =>
+                oc.columns(['actorId', 'treeSlug']).doUpdateSet({
+                  inbox: followerInbox,
+                  followActivityId: activityId,
+                }),
+              )
+              .execute()
+          } catch (err) {
+            ctx.logger.warn({ err, actorId }, 'failed to store follower')
+          }
+
+          // Send Accept back to the follower
+          const accept = {
+            '@context': 'https://www.w3.org/ns/activitystreams',
+            type: 'Accept',
+            id: `${treeUrl}/accept/${crypto.randomUUID()}`,
+            actor: treeUrl,
+            object: body,
+          }
+
+          const delivered = await deliverActivity(followerInbox, accept, {
+            keyId: `${treeUrl}#main-key`,
+            privateKeyPem: ctx.apKey.privateKeyPem,
+          })
+          ctx.logger.info(
+            { actorId, treeSlug: tree.slug, delivered },
+            'processed Follow activity',
+          )
+        } else {
+          ctx.logger.warn(
+            { actorId },
+            'could not resolve inbox for Follow actor',
+          )
+        }
+      }
+
+      // Handle Undo (for unfollowing)
+      if (body.type === 'Undo' && actorId) {
+        const inner = body.object
+        const innerType =
+          typeof inner === 'object' && inner !== null ? inner.type : null
+
+        if (innerType === 'Follow') {
+          try {
+            await ctx.db
+              .deleteFrom('follower')
+              .where('actorId', '=', actorId)
+              .where('treeSlug', '=', tree.slug)
+              .execute()
+
+            ctx.logger.info(
+              { actorId, treeSlug: tree.slug },
+              'processed Undo Follow',
+            )
+          } catch (err) {
+            ctx.logger.warn({ err, actorId }, 'failed to remove follower')
+          }
+        }
+      }
+
+      return res.status(202).json({ status: 'accepted' })
+    }),
+  )
+
+  // ActivityPub outbox for a tree (read-only, lists inscriptions as Create activities)
+  router.get(
+    '/tree/:slug/outbox',
+    handler(async (req, res) => {
+      const tree = await ctx.db
+        .selectFrom('tree')
+        .selectAll()
+        .where('slug', '=', req.params.slug)
+        .executeTakeFirst()
+
+      if (!tree) {
+        return res.status(404).json({ error: 'Tree not found' })
+      }
+
+      const inscriptions = await ctx.db
+        .selectFrom('inscription')
+        .selectAll()
+        .where('tree', '=', tree.uri)
+        .orderBy('createdAt', 'asc')
+        .execute()
+
+      const allDids = [tree.authorDid, ...inscriptions.map((i) => i.authorDid)]
+      const didHandleMap = await ctx.resolver.resolveDidsToHandles(allDids)
+
+      const baseUrl = env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`
+      const tJson = treeToJson(tree, didHandleMap[tree.authorDid])
+
+      res.setHeader('Content-Type', 'application/activity+json; charset=utf-8')
+      return res.json({
+        '@context': 'https://www.w3.org/ns/activitystreams',
+        type: 'OrderedCollection',
+        id: `${baseUrl}/tree/${tree.slug}/outbox`,
+        totalItems: inscriptions.length,
+        orderedItems: inscriptions.map((i) => {
+          const iJson = inscriptionToJson(i, didHandleMap[i.authorDid])
+          return {
+            type: 'Create',
+            actor: iJson.authorHandle
+              ? `https://bsky.app/profile/${iJson.authorHandle}`
+              : iJson.authorDid,
+            published: iJson.createdAt,
+            object: inscriptionToActivityStreams(iJson, tJson, baseUrl),
+          }
+        }),
+      })
+    }),
+  )
+
+  // ActivityPub followers collection for a tree
+  router.get(
+    '/tree/:slug/followers',
+    handler(async (req, res) => {
+      const tree = await ctx.db
+        .selectFrom('tree')
+        .select(['uri', 'slug'])
+        .where('slug', '=', req.params.slug)
+        .executeTakeFirst()
+
+      if (!tree) {
+        return res.status(404).json({ error: 'Tree not found' })
+      }
+
+      const followers = await ctx.db
+        .selectFrom('follower')
+        .select(['actorId', 'createdAt'])
+        .where('treeSlug', '=', tree.slug)
+        .orderBy('createdAt', 'asc')
+        .execute()
+
+      const baseUrl = env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`
+
+      res.setHeader('Content-Type', 'application/activity+json; charset=utf-8')
+      return res.json({
+        '@context': 'https://www.w3.org/ns/activitystreams',
+        type: 'OrderedCollection',
+        id: `${baseUrl}/tree/${tree.slug}/followers`,
+        totalItems: followers.length,
+        orderedItems: followers.map((f) => f.actorId),
+      })
     }),
   )
 
