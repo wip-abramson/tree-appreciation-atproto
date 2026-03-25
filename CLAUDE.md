@@ -28,9 +28,11 @@ The app uses the `com.treeappreciation.*` namespace with two record types: `com.
 
 ### Key Layers
 
-**Routes (src/routes.ts):** Express router with OAuth endpoints (`/login`, `/oauth/callback`, `/logout`), OAuth metadata endpoints, and app endpoints (`GET /` for tree listing, `GET /tree/:uri` for tree detail, `POST /tree` to create trees, `POST /inscription` to add inscriptions).
+**Routes (src/routes.tsx):** Express router with OAuth endpoints (`/login`, `/oauth/callback`, `/logout`), OAuth metadata endpoints, app endpoints (`GET /` for tree listing, `GET /tree/:slug` for tree detail, `POST /tree` to create trees, `POST /inscription` to add inscriptions), and ActivityPub endpoints (inbox, outbox, followers, individual activities). Content negotiation on `GET /` and `GET /tree/:slug` returns ActivityStreams JSON when `application/activity+json` or `application/ld+json` is requested.
 
-**Database (src/db.ts):** SQLite via better-sqlite3 with Kysely as a type-safe query builder. Tables: `tree` (indexed tree records), `inscription` (indexed inscription records with index on `tree` column), `auth_session`, `auth_state`. Migrations are inline. DB path configured via `DB_PATH` env var (`:memory:` for dev).
+**Database (src/db.ts):** SQLite via better-sqlite3 with Kysely as a type-safe query builder. Tables: `tree` (indexed tree records), `inscription` (indexed inscription records with index on `tree` column), `inbox_activity` (received ActivityPub activities), `follower` (AP actors following trees), `ap_key` (instance RSA keypair for HTTP Signatures), `auth_session`, `auth_state`. Migrations are inline. DB path configured via `DB_PATH` env var (`:memory:` for dev).
+
+**ActivityPub / HTTP Signatures (src/lib/http-signatures.ts):** RSA-SHA256 signing and verification for ActivityPub server-to-server auth. Instance-level keypair generated on first boot and stored in `ap_key` table. Outbound deliveries (Accept activities) are signed. Inbound inbox requests are verified when a Signature header is present.
 
 **AT Protocol OAuth (src/auth/):** `client.ts` creates `NodeOAuthClient` — loopback client in dev, confidential client in production (requires `PRIVATE_KEYS` and `PUBLIC_URL`). `storage.ts` implements `SessionStore` and `StateStore` backed by SQLite.
 

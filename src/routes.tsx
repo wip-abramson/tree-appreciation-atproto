@@ -130,16 +130,23 @@ function treeToActivityStreams(
   return obj
 }
 
+function rkeyFromUri(uri: string): string {
+  return uri.split('/').pop()!
+}
+
 function inscriptionToActivityStreams(
   inscription: ReturnType<typeof inscriptionToJson>,
   tree: ReturnType<typeof treeToJson>,
   baseUrl: string,
 ) {
+  const rkey = rkeyFromUri(inscription.uri)
+  const treeUrl = `${baseUrl}/tree/${tree.slug}`
   const obj: Record<string, unknown> = {
     type: 'Note',
-    id: inscription.uri,
+    id: `${treeUrl}/inscription/${rkey}`,
+    url: `${treeUrl}/inscription/${rkey}`,
     published: inscription.createdAt,
-    inReplyTo: `${baseUrl}/tree/${tree.slug}`,
+    inReplyTo: treeUrl,
     attributedTo: inscription.authorHandle
       ? `https://bsky.app/profile/${inscription.authorHandle}`
       : inscription.authorDid,
@@ -393,6 +400,33 @@ export const createRouter = (ctx: AppContext): RequestListener => {
       maxAge: MAX_AGE * 1000,
     }),
   )
+
+  // CORS for ActivityPub/JSON endpoints (outbox, inbox, followers, and content-negotiated tree pages)
+  router.use((req, res, next) => {
+    // Only add CORS to paths that serve ActivityStreams data
+    const isApPath =
+      req.path.endsWith('/outbox') ||
+      req.path.endsWith('/inbox') ||
+      req.path.endsWith('/followers')
+    const isContentNegotiated =
+      req.path === '/' || req.path.startsWith('/tree/')
+    const wantsAp =
+      req.get('accept')?.includes('application/activity+json') ||
+      req.get('accept')?.includes('application/ld+json') ||
+      req.get('accept')?.includes('application/json')
+
+    if (isApPath || (isContentNegotiated && wantsAp)) {
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept')
+
+      if (req.method === 'OPTIONS') {
+        return res.status(204).end()
+      }
+    }
+
+    next()
+  })
 
   // Serve mock images (only active when MOCK_WRITES is enabled)
   if (env.MOCK_WRITES) {
@@ -1033,8 +1067,10 @@ export const createRouter = (ctx: AppContext): RequestListener => {
         totalItems: inscriptions.length,
         orderedItems: inscriptions.map((i) => {
           const iJson = inscriptionToJson(i, didHandleMap[i.authorDid])
+          const rkey = rkeyFromUri(i.uri)
           return {
             type: 'Create',
+            id: `${baseUrl}/tree/${tree.slug}/outbox/${rkey}`,
             actor: iJson.authorHandle
               ? `https://bsky.app/profile/${iJson.authorHandle}`
               : iJson.authorDid,
@@ -1042,6 +1078,83 @@ export const createRouter = (ctx: AppContext): RequestListener => {
             object: inscriptionToActivityStreams(iJson, tJson, baseUrl),
           }
         }),
+      })
+    }),
+  )
+
+  // Individual inscription as ActivityStreams Note
+  router.get(
+    '/tree/:slug/inscription/:rkey',
+    handler(async (req, res) => {
+      const tree = await ctx.db
+        .selectFrom('tree')
+        .selectAll()
+        .where('slug', '=', req.params.slug)
+        .executeTakeFirst()
+
+      if (!tree) return res.status(404).json({ error: 'Tree not found' })
+
+      const uriSuffix = `com.treeappreciation.inscription/${req.params.rkey}`
+      const inscription = await ctx.db
+        .selectFrom('inscription')
+        .selectAll()
+        .where('tree', '=', tree.uri)
+        .where('uri', 'like', `%${uriSuffix}`)
+        .executeTakeFirst()
+
+      if (!inscription) return res.status(404).json({ error: 'Inscription not found' })
+
+      const didHandleMap = await ctx.resolver.resolveDidsToHandles([inscription.authorDid])
+      const baseUrl = env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`
+      const tJson = treeToJson(tree, didHandleMap[tree.authorDid])
+      const iJson = inscriptionToJson(inscription, didHandleMap[inscription.authorDid])
+
+      res.setHeader('Content-Type', 'application/activity+json; charset=utf-8')
+      return res.json({
+        '@context': 'https://www.w3.org/ns/activitystreams',
+        ...inscriptionToActivityStreams(iJson, tJson, baseUrl),
+      })
+    }),
+  )
+
+  // Individual outbox activity (Create wrapper for an inscription)
+  router.get(
+    '/tree/:slug/outbox/:rkey',
+    handler(async (req, res) => {
+      const tree = await ctx.db
+        .selectFrom('tree')
+        .selectAll()
+        .where('slug', '=', req.params.slug)
+        .executeTakeFirst()
+
+      if (!tree) return res.status(404).json({ error: 'Tree not found' })
+
+      const uriSuffix = `com.treeappreciation.inscription/${req.params.rkey}`
+      const inscription = await ctx.db
+        .selectFrom('inscription')
+        .selectAll()
+        .where('tree', '=', tree.uri)
+        .where('uri', 'like', `%${uriSuffix}`)
+        .executeTakeFirst()
+
+      if (!inscription) return res.status(404).json({ error: 'Activity not found' })
+
+      const didHandleMap = await ctx.resolver.resolveDidsToHandles([inscription.authorDid])
+      const baseUrl = env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`
+      const tJson = treeToJson(tree, didHandleMap[tree.authorDid])
+      const iJson = inscriptionToJson(inscription, didHandleMap[inscription.authorDid])
+      const rkey = rkeyFromUri(inscription.uri)
+
+      res.setHeader('Content-Type', 'application/activity+json; charset=utf-8')
+      return res.json({
+        '@context': 'https://www.w3.org/ns/activitystreams',
+        type: 'Create',
+        id: `${baseUrl}/tree/${tree.slug}/outbox/${rkey}`,
+        actor: iJson.authorHandle
+          ? `https://bsky.app/profile/${iJson.authorHandle}`
+          : iJson.authorDid,
+        published: iJson.createdAt,
+        object: inscriptionToActivityStreams(iJson, tJson, baseUrl),
       })
     }),
   )

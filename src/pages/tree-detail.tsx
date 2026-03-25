@@ -12,6 +12,20 @@ type Props = {
   echoes?: Echo[]
 }
 
+function stripHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>\s*<p[^>]*>/gi, '\n\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .trim()
+}
+
 const imagePreviewScript = `
 document.querySelector('.inscription-form input[type="file"]').addEventListener('change', function(e) {
   var preview = document.getElementById('inscription-preview');
@@ -268,7 +282,7 @@ function EchoItem({ echo }: { echo: Echo }) {
         {label ? <span className="echo-label">{label}</span> : null}
       </div>
       {echo.content ? (
-        <p className="echo-content" dangerouslySetInnerHTML={{ __html: echo.content }} />
+        <p className="echo-content">{stripHtml(echo.content)}</p>
       ) : null}
       {echo.imageUrl ? (
         <img className="echo-image" src={echo.imageUrl} alt="" />
