@@ -2,6 +2,7 @@ import type { Database } from '#/db'
 import * as Tree from '#/lexicon/types/com/treeappreciation/tree'
 import * as Inscription from '#/lexicon/types/com/treeappreciation/inscription'
 import { slugify, findUniqueSlug } from '#/lib/slug'
+import { upstreamImageUrl } from '#/lib/util'
 import { IdResolver, MemoryCache } from '@atproto/identity'
 import { Event, Firehose } from '@atproto/sync'
 import pino from 'pino'
@@ -61,6 +62,20 @@ export function createIngester(db: Database) {
               }),
             )
             .execute()
+
+          // Register image in proxy table
+          if (imageCid) {
+            await db
+              .insertInto('image')
+              .values({
+                cid: imageCid,
+                authorDid: evt.did,
+                upstreamUrl: upstreamImageUrl(evt.did, imageCid),
+                createdAt: now.toISOString(),
+              })
+              .onConflict((oc) => oc.doNothing())
+              .execute()
+          }
         } else if (
           evt.collection === 'com.treeappreciation.inscription' &&
           Inscription.isRecord(record) &&
@@ -94,6 +109,20 @@ export function createIngester(db: Database) {
               }),
             )
             .execute()
+
+          // Register image in proxy table
+          if (imageCid) {
+            await db
+              .insertInto('image')
+              .values({
+                cid: imageCid,
+                authorDid: evt.did,
+                upstreamUrl: upstreamImageUrl(evt.did, imageCid),
+                createdAt: now.toISOString(),
+              })
+              .onConflict((oc) => oc.doNothing())
+              .execute()
+          }
         }
       } else if (evt.event === 'delete') {
         if (evt.collection === 'com.treeappreciation.tree') {

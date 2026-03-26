@@ -21,7 +21,7 @@ The app uses the `com.treeappreciation.*` namespace with two record types: `com.
 
 ### Boot Sequence (src/index.ts)
 
-1. `createAppContext()` initializes all dependencies (DB, OAuth client, firehose ingester, logger, ID resolver) into an `AppContext` object
+1. `createAppContext()` initializes all dependencies (DB, OAuth client, firehose ingester, logger, ID resolver, AP signing keypair) into an `AppContext` object
 2. `createRouter(ctx)` sets up Express routes
 3. HTTP server starts, then firehose subscription begins
 4. Graceful shutdown on SIGINT/SIGTERM
@@ -30,7 +30,7 @@ The app uses the `com.treeappreciation.*` namespace with two record types: `com.
 
 **Routes (src/routes.tsx):** Express router with OAuth endpoints (`/login`, `/oauth/callback`, `/logout`), OAuth metadata endpoints, app endpoints (`GET /` for tree listing, `GET /tree/:slug` for tree detail, `POST /tree` to create trees, `POST /inscription` to add inscriptions), and ActivityPub endpoints (inbox, outbox, followers, individual activities). Content negotiation on `GET /` and `GET /tree/:slug` returns ActivityStreams JSON when `application/activity+json` or `application/ld+json` is requested.
 
-**Database (src/db.ts):** SQLite via better-sqlite3 with Kysely as a type-safe query builder. Tables: `tree` (indexed tree records), `inscription` (indexed inscription records with index on `tree` column), `inbox_activity` (received ActivityPub activities), `follower` (AP actors following trees), `ap_key` (instance RSA keypair for HTTP Signatures), `auth_session`, `auth_state`. Migrations are inline. DB path configured via `DB_PATH` env var (`:memory:` for dev).
+**Database (src/db.ts):** SQLite via better-sqlite3 with Kysely as a type-safe query builder. Tables: `tree`, `inscription` (with index on `tree` column), `inbox_activity` (received AP activities), `follower` (AP actors following trees), `ap_key` (instance RSA keypair), `image` (CID-to-upstream-URL mapping for image proxy), `auth_session`, `auth_state`. Migrations are inline. DB path configured via `DB_PATH` env var (`:memory:` for dev).
 
 **ActivityPub / HTTP Signatures (src/lib/http-signatures.ts):** RSA-SHA256 signing and verification for ActivityPub server-to-server auth. Instance-level keypair generated on first boot and stored in `ap_key` table. Outbound deliveries (Accept activities) are signed. Inbound inbox requests are verified when a Signature header is present.
 
@@ -40,7 +40,9 @@ The app uses the `com.treeappreciation.*` namespace with two record types: `com.
 
 **Lexicons (lexicons/):** JSON schema files defining custom AT Protocol record types. Run `npm run lexgen` after modifying these to regenerate `src/lexicon/` (types, validators, schema definitions). Custom schemas: `com.treeappreciation.tree`, `com.treeappreciation.inscription`.
 
-**Views (src/pages/):** Server-side rendered HTML using `uhtml` tagged template literals. `shell.ts` wraps pages in the HTML document structure. Pages: `home.ts` (tree listing + creation form), `tree-detail.ts` (tree info + inscriptions), `login.ts`.
+**Image Proxy (GET /img/:cid):** All image URLs are served through our domain. The route redirects to the upstream CDN (currently Bluesky) via 302. The `image` table maps CIDs to upstream URLs; backfills on first request if the CID predates the table. See `docs/image-proxy.md`.
+
+**Views (src/pages/):** Server-side rendered HTML using JSX (React). `shell.tsx` wraps pages in the HTML document structure. Pages: `home.tsx` (tree listing), `seed-tree.tsx` (tree creation form), `tree-detail.tsx` (tree info + inscriptions + fediverse echoes), `login.tsx`.
 
 **Identity Resolution (src/id-resolver.ts):** Resolves DIDs to human-readable handles using the OAuth client's identity resolver. Provides batch `resolveDidsToHandles()`.
 

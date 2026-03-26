@@ -18,6 +18,7 @@ export type DatabaseSchema = {
   inbox_activity: InboxActivity
   follower: Follower
   ap_key: ApKey
+  image: Image
   auth_session: AuthSession
   auth_state: AuthState
 }
@@ -53,6 +54,13 @@ export type InboxActivity = {
   type: string
   body: string
   receivedAt: string
+}
+
+export type Image = {
+  cid: string
+  authorDid: string
+  upstreamUrl: string
+  createdAt: string
 }
 
 export type ApKey = {
@@ -323,6 +331,21 @@ migrations['007b'] = {
   },
   async down(db: Kysely<unknown>) {
     await db.schema.dropTable('follower').execute()
+  },
+}
+
+migrations['008'] = {
+  async up(db: Kysely<unknown>) {
+    await db.schema
+      .createTable('image')
+      .addColumn('cid', 'varchar', (col) => col.primaryKey())
+      .addColumn('authorDid', 'varchar', (col) => col.notNull())
+      .addColumn('upstreamUrl', 'varchar', (col) => col.notNull())
+      .addColumn('createdAt', 'varchar', (col) => col.notNull())
+      .execute()
+  },
+  async down(db: Kysely<unknown>) {
+    await db.schema.dropTable('image').execute()
   },
 }
 

@@ -22,7 +22,7 @@ import * as Tree from '#/lexicon/types/com/treeappreciation/tree'
 import * as Inscription from '#/lexicon/types/com/treeappreciation/inscription'
 import { handler } from '#/lib/http'
 import { slugify, findUniqueSlug } from '#/lib/slug'
-import { ifString, imageUrl } from '#/lib/util'
+import { ifString, imageUrl, upstreamImageUrl } from '#/lib/util'
 import { page } from '#/lib/view'
 import { Home } from '#/pages/home'
 import { SeedTree } from '#/pages/seed-tree'
@@ -101,9 +101,7 @@ function treeToActivityStreams(
     inbox: `${treeUrl}/inbox`,
     outbox: `${treeUrl}/outbox`,
     followers: `${treeUrl}/followers`,
-    attributedTo: tree.authorHandle
-      ? `https://bsky.app/profile/${tree.authorHandle}`
-      : tree.authorDid,
+    attributedTo: tree.authorDid,
   }
   if (publicKeyPem) {
     obj.publicKey = {
@@ -116,7 +114,7 @@ function treeToActivityStreams(
   if (tree.imageUrl) {
     obj.image = {
       type: 'Image',
-      url: tree.imageUrl,
+      url: tree.imageUrl.startsWith('/') ? `${baseUrl}${tree.imageUrl}` : tree.imageUrl,
       mediaType: 'image/jpeg',
     }
   }
@@ -147,15 +145,13 @@ function inscriptionToActivityStreams(
     url: `${treeUrl}/inscription/${rkey}`,
     published: inscription.createdAt,
     inReplyTo: treeUrl,
-    attributedTo: inscription.authorHandle
-      ? `https://bsky.app/profile/${inscription.authorHandle}`
-      : inscription.authorDid,
+    attributedTo: inscription.authorDid,
   }
   if (inscription.text) obj.content = inscription.text
   if (inscription.imageUrl) {
     obj.image = {
       type: 'Image',
-      url: inscription.imageUrl,
+      url: inscription.imageUrl.startsWith('/') ? `${baseUrl}${inscription.imageUrl}` : inscription.imageUrl,
       mediaType: 'image/jpeg',
     }
   }
@@ -401,21 +397,24 @@ export const createRouter = (ctx: AppContext): RequestListener => {
     }),
   )
 
-  // CORS for ActivityPub/JSON endpoints (outbox, inbox, followers, and content-negotiated tree pages)
+  // CORS for ActivityPub/JSON endpoints and content-negotiated tree pages
   router.use((req, res, next) => {
-    // Only add CORS to paths that serve ActivityStreams data
     const isApPath =
       req.path.endsWith('/outbox') ||
       req.path.endsWith('/inbox') ||
-      req.path.endsWith('/followers')
+      req.path.endsWith('/followers') ||
+      req.path.startsWith('/img/')
     const isContentNegotiated =
       req.path === '/' || req.path.startsWith('/tree/')
+
+    // For content-negotiated paths, allow CORS on OPTIONS (preflight won't
+    // have the Accept header) and on requests that ask for AP/JSON content
     const wantsAp =
       req.get('accept')?.includes('application/activity+json') ||
       req.get('accept')?.includes('application/ld+json') ||
       req.get('accept')?.includes('application/json')
 
-    if (isApPath || (isContentNegotiated && wantsAp)) {
+    if (isApPath || (isContentNegotiated && (req.method === 'OPTIONS' || wantsAp))) {
       res.setHeader('Access-Control-Allow-Origin', '*')
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept')
@@ -443,6 +442,64 @@ export const createRouter = (ctx: AppContext): RequestListener => {
       }),
     )
   }
+
+  // Image proxy — redirect to upstream CDN via URLs we control
+  router.get(
+    '/img/:cid',
+    handler(async (req, res) => {
+      const cid = req.params.cid
+
+      // Check the image table first
+      const image = await ctx.db
+        .selectFrom('image')
+        .select('upstreamUrl')
+        .where('cid', '=', cid)
+        .executeTakeFirst()
+
+      if (image) {
+        res.setHeader('cache-control', 'public, max-age=31536000, immutable')
+        return res.redirect(302, image.upstreamUrl)
+      }
+
+      // Fall back to searching tree and inscription tables
+      const tree = await ctx.db
+        .selectFrom('tree')
+        .select('authorDid')
+        .where('imageCid', '=', cid)
+        .executeTakeFirst()
+
+      if (tree) {
+        const upstream = upstreamImageUrl(tree.authorDid, cid)
+        // Backfill the image table
+        await ctx.db
+          .insertInto('image')
+          .values({ cid, authorDid: tree.authorDid, upstreamUrl: upstream, createdAt: new Date().toISOString() })
+          .onConflict((oc) => oc.doNothing())
+          .execute()
+        res.setHeader('cache-control', 'public, max-age=31536000, immutable')
+        return res.redirect(302, upstream)
+      }
+
+      const inscription = await ctx.db
+        .selectFrom('inscription')
+        .select('authorDid')
+        .where('imageCid', '=', cid)
+        .executeTakeFirst()
+
+      if (inscription) {
+        const upstream = upstreamImageUrl(inscription.authorDid, cid)
+        await ctx.db
+          .insertInto('image')
+          .values({ cid, authorDid: inscription.authorDid, upstreamUrl: upstream, createdAt: new Date().toISOString() })
+          .onConflict((oc) => oc.doNothing())
+          .execute()
+        res.setHeader('cache-control', 'public, max-age=31536000, immutable')
+        return res.redirect(302, upstream)
+      }
+
+      return res.status(404).send('Image not found')
+    }),
+  )
 
   // OAuth metadata
   router.get(
@@ -1071,9 +1128,7 @@ export const createRouter = (ctx: AppContext): RequestListener => {
           return {
             type: 'Create',
             id: `${baseUrl}/tree/${tree.slug}/outbox/${rkey}`,
-            actor: iJson.authorHandle
-              ? `https://bsky.app/profile/${iJson.authorHandle}`
-              : iJson.authorDid,
+            actor: iJson.authorDid,
             published: iJson.createdAt,
             object: inscriptionToActivityStreams(iJson, tJson, baseUrl),
           }
@@ -1150,9 +1205,7 @@ export const createRouter = (ctx: AppContext): RequestListener => {
         '@context': 'https://www.w3.org/ns/activitystreams',
         type: 'Create',
         id: `${baseUrl}/tree/${tree.slug}/outbox/${rkey}`,
-        actor: iJson.authorHandle
-          ? `https://bsky.app/profile/${iJson.authorHandle}`
-          : iJson.authorDid,
+        actor: iJson.authorDid,
         published: iJson.createdAt,
         object: inscriptionToActivityStreams(iJson, tJson, baseUrl),
       })
@@ -1325,6 +1378,20 @@ export const createRouter = (ctx: AppContext): RequestListener => {
             indexedAt: new Date().toISOString(),
           })
           .execute()
+
+        // Register the image in the proxy table
+        if (imageCid && !imageCid.startsWith('mock-')) {
+          await ctx.db
+            .insertInto('image')
+            .values({
+              cid: imageCid,
+              authorDid: agent.assertDid,
+              upstreamUrl: upstreamImageUrl(agent.assertDid, imageCid),
+              createdAt: new Date().toISOString(),
+            })
+            .onConflict((oc) => oc.doNothing())
+            .execute()
+        }
       } catch (err) {
         ctx.logger.warn(
           { err },
@@ -1457,6 +1524,20 @@ export const createRouter = (ctx: AppContext): RequestListener => {
             indexedAt: new Date().toISOString(),
           })
           .execute()
+
+        // Register the image in the proxy table
+        if (imageCid && !imageCid.startsWith('mock-')) {
+          await ctx.db
+            .insertInto('image')
+            .values({
+              cid: imageCid,
+              authorDid: agent.assertDid,
+              upstreamUrl: upstreamImageUrl(agent.assertDid, imageCid),
+              createdAt: new Date().toISOString(),
+            })
+            .onConflict((oc) => oc.doNothing())
+            .execute()
+        }
       } catch (err) {
         ctx.logger.warn(
           { err },

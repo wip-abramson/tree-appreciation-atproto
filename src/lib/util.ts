@@ -7,5 +7,9 @@ export function imageUrl(authorDid: string, imageCid: string): string {
   if (imageCid.startsWith('mock-')) {
     return `/mock-image/${imageCid}`
   }
+  return `/img/${imageCid}`
+}
+
+export function upstreamImageUrl(authorDid: string, imageCid: string): string {
   return `https://cdn.bsky.app/img/feed_fullsize/plain/${authorDid}/${imageCid}@jpeg`
 }
