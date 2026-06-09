@@ -26,8 +26,9 @@ export type DatabaseSchema = {
 export type Tree = {
   uri: string
   authorDid: string
-  name: string
+  name: string | null
   slug: string
+  place: string | null
   description: string | null
   imageCid: string | null
   latitude: string | null
@@ -346,6 +347,57 @@ migrations['008'] = {
   },
   async down(db: Kysely<unknown>) {
     await db.schema.dropTable('image').execute()
+  },
+}
+
+migrations['009'] = {
+  async up(db: Kysely<unknown>) {
+    // SQLite requires table recreation to make name nullable; also adds place
+    await db.schema
+      .createTable('tree_new')
+      .addColumn('uri', 'varchar', (col) => col.primaryKey())
+      .addColumn('authorDid', 'varchar', (col) => col.notNull())
+      .addColumn('name', 'varchar')
+      .addColumn('slug', 'varchar', (col) => col.notNull().defaultTo(''))
+      .addColumn('place', 'varchar')
+      .addColumn('description', 'varchar')
+      .addColumn('imageCid', 'varchar')
+      .addColumn('latitude', 'varchar')
+      .addColumn('longitude', 'varchar')
+      .addColumn('createdAt', 'varchar', (col) => col.notNull())
+      .addColumn('indexedAt', 'varchar', (col) => col.notNull())
+      .execute()
+    await sql`INSERT INTO tree_new (uri, "authorDid", name, slug, description, "imageCid", latitude, longitude, "createdAt", "indexedAt") SELECT uri, "authorDid", name, slug, description, "imageCid", latitude, longitude, "createdAt", "indexedAt" FROM tree`.execute(db)
+    await db.schema.dropTable('tree').execute()
+    await sql`ALTER TABLE tree_new RENAME TO tree`.execute(db)
+    await db.schema
+      .createIndex('tree_slug_idx')
+      .on('tree')
+      .column('slug')
+      .execute()
+  },
+  async down(db: Kysely<unknown>) {
+    await db.schema
+      .createTable('tree_old')
+      .addColumn('uri', 'varchar', (col) => col.primaryKey())
+      .addColumn('authorDid', 'varchar', (col) => col.notNull())
+      .addColumn('name', 'varchar', (col) => col.notNull())
+      .addColumn('slug', 'varchar', (col) => col.notNull().defaultTo(''))
+      .addColumn('description', 'varchar')
+      .addColumn('imageCid', 'varchar')
+      .addColumn('latitude', 'varchar')
+      .addColumn('longitude', 'varchar')
+      .addColumn('createdAt', 'varchar', (col) => col.notNull())
+      .addColumn('indexedAt', 'varchar', (col) => col.notNull())
+      .execute()
+    await sql`INSERT INTO tree_old (uri, "authorDid", name, slug, description, "imageCid", latitude, longitude, "createdAt", "indexedAt") SELECT uri, "authorDid", COALESCE(name, ''), slug, description, "imageCid", latitude, longitude, "createdAt", "indexedAt" FROM tree`.execute(db)
+    await db.schema.dropTable('tree').execute()
+    await sql`ALTER TABLE tree_old RENAME TO tree`.execute(db)
+    await db.schema
+      .createIndex('tree_slug_idx')
+      .on('tree')
+      .column('slug')
+      .execute()
   },
 }
 

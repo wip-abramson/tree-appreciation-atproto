@@ -21,8 +21,9 @@ import * as Profile from '#/lexicon/types/app/bsky/actor/profile'
 import * as Tree from '#/lexicon/types/com/treeappreciation/tree'
 import * as Inscription from '#/lexicon/types/com/treeappreciation/inscription'
 import { handler } from '#/lib/http'
-import { slugify, findUniqueSlug } from '#/lib/slug'
-import { ifString, imageUrl, upstreamImageUrl } from '#/lib/util'
+import { reverseGeocodePlace } from '#/lib/geocode'
+import { findUniqueSlug } from '#/lib/slug'
+import { ifString, imageUrl, treeLabel, upstreamImageUrl } from '#/lib/util'
 import { page } from '#/lib/view'
 import { Home } from '#/pages/home'
 import { SeedTree } from '#/pages/seed-tree'
@@ -57,6 +58,7 @@ function treeToJson(
     uri: tree.uri,
     name: tree.name,
     slug: tree.slug,
+    place: tree.place,
     description: tree.description,
     authorDid: tree.authorDid,
     authorHandle: handle ?? null,
@@ -96,7 +98,7 @@ function treeToActivityStreams(
     type: 'Place',
     id: treeUrl,
     url: treeUrl,
-    name: tree.name,
+    name: treeLabel(tree) ?? 'a tree',
     published: tree.createdAt,
     inbox: `${treeUrl}/inbox`,
     outbox: `${treeUrl}/outbox`,
@@ -719,30 +721,30 @@ export const createRouter = (ctx: AppContext): RequestListener => {
       const hasMore = rows.length > limit
       const trees = hasMore ? rows.slice(0, limit) : rows
 
-      // Get inscription counts for these trees
-      const treeCounts: Record<string, number> = {}
-      if (trees.length > 0) {
-        const counts = await ctx.db
-          .selectFrom('inscription')
-          .select(['tree', ctx.db.fn.count('uri').as('count')])
-          .where(
-            'tree',
-            'in',
-            trees.map((t) => t.uri),
-          )
-          .groupBy('tree')
-          .execute()
-        for (const row of counts) {
-          treeCounts[row.tree] = Number(row.count)
-        }
-      }
-
-      // Map user DIDs to their domain-name handles
-      const didHandleMap = await ctx.resolver.resolveDidsToHandles(
-        trees.map((t) => t.authorDid),
-      )
-
       if (jsonMode) {
+        // Inscription counts and handles are only surfaced via the API;
+        // the HTML grove deliberately carries no metrics or identity.
+        const treeCounts: Record<string, number> = {}
+        if (trees.length > 0) {
+          const counts = await ctx.db
+            .selectFrom('inscription')
+            .select(['tree', ctx.db.fn.count('uri').as('count')])
+            .where(
+              'tree',
+              'in',
+              trees.map((t) => t.uri),
+            )
+            .groupBy('tree')
+            .execute()
+          for (const row of counts) {
+            treeCounts[row.tree] = Number(row.count)
+          }
+        }
+
+        const didHandleMap = await ctx.resolver.resolveDidsToHandles(
+          trees.map((t) => t.authorDid),
+        )
+
         res.setHeader('Vary', 'Accept')
         if (jsonMode === 'activity+json') {
           const baseUrl = env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`
@@ -791,18 +793,14 @@ export const createRouter = (ctx: AppContext): RequestListener => {
         user = buildUserInfo(agent.assertDid, profile, handleMap)
       }
 
-      res
-        .type('html')
-        .send(
-          page(
-            <Home
-              trees={trees}
-              treeCounts={treeCounts}
-              didHandleMap={didHandleMap}
-              user={user}
-            />,
-          ),
-        )
+      // Gently shuffle — the grove has no "recent", no ranking
+      const shuffled = [...trees]
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1))
+        ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+      }
+
+      res.type('html').send(page(<Home trees={shuffled} user={user} />))
     }),
   )
 
@@ -1316,13 +1314,18 @@ export const createRouter = (ctx: AppContext): RequestListener => {
         (formLng && !isNaN(Number(formLng)) ? formLng : undefined) || exifLng
       )
 
+      // Ground the tree in the physical world with a quiet place label
+      let place: string | undefined
+      if (latitude && longitude) {
+        place = (await reverseGeocodePlace(latitude, longitude)) ?? undefined
+      }
+
       const record: Record<string, unknown> = {
         $type: 'com.treeappreciation.tree',
-        name: req.body?.name,
-        description: req.body?.description || undefined,
         image: imageBlob,
         createdAt: new Date().toISOString(),
       }
+      if (place) record.place = place
       if (latitude) record.latitude = latitude
       if (longitude) record.longitude = longitude
 
@@ -1333,9 +1336,10 @@ export const createRouter = (ctx: AppContext): RequestListener => {
           .send('<h1>Error: Invalid tree data</h1>')
       }
 
+      // The rkey doubles as the public slug — opaque, no naming required
+      const rkey = TID.nextStr()
       let uri
       if (env.MOCK_WRITES) {
-        const rkey = TID.nextStr()
         uri = `at://${agent.assertDid}/com.treeappreciation.tree/${rkey}`
         ctx.logger.info({ uri }, 'MOCK_WRITES: skipping putRecord for tree')
       } else {
@@ -1343,7 +1347,7 @@ export const createRouter = (ctx: AppContext): RequestListener => {
           const result = await agent.com.atproto.repo.putRecord({
             repo: agent.assertDid,
             collection: 'com.treeappreciation.tree',
-            rkey: TID.nextStr(),
+            rkey,
             record,
             validate: false,
           })
@@ -1357,10 +1361,7 @@ export const createRouter = (ctx: AppContext): RequestListener => {
         }
       }
 
-      const baseSlug = req.body?.slug
-        ? slugify(req.body.slug)
-        : slugify(record.name as string)
-      const slug = await findUniqueSlug(ctx.db, baseSlug)
+      const slug = await findUniqueSlug(ctx.db, rkey)
 
       try {
         await ctx.db
@@ -1368,9 +1369,10 @@ export const createRouter = (ctx: AppContext): RequestListener => {
           .values({
             uri,
             authorDid: agent.assertDid,
-            name: record.name as string,
+            name: null,
             slug,
-            description: (record.description as string) ?? null,
+            place: place ?? null,
+            description: null,
             imageCid,
             latitude: latitude ?? null,
             longitude: longitude ?? null,

@@ -307,11 +307,17 @@ export const schemaDict = {
         key: 'tid',
         record: {
           type: 'object',
-          required: ['name', 'createdAt'],
+          required: ['createdAt'],
           properties: {
             name: {
               type: 'string',
               maxLength: 200,
+            },
+            place: {
+              type: 'string',
+              maxLength: 200,
+              description:
+                'A nearby place label grounding the tree in the physical world, e.g. reverse-geocoded from coordinates',
             },
             description: {
               type: 'string',

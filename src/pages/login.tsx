@@ -10,7 +10,7 @@ export function Login({ error }: Props) {
       : new URL(env.PDS_URL).hostname
 
   return (
-    <Shell title="Log in">
+    <Shell title="Log in" hideLoginLink>
       <div id="root">
         <div id="header">
           <h1>Tree Appreciation</h1>

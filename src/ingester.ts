@@ -1,8 +1,12 @@
 import type { Database } from '#/db'
 import * as Tree from '#/lexicon/types/com/treeappreciation/tree'
 import * as Inscription from '#/lexicon/types/com/treeappreciation/inscription'
-import { slugify, findUniqueSlug } from '#/lib/slug'
-import { upstreamImageUrl } from '#/lib/util'
+import {
+  indexTree,
+  indexInscription,
+  deleteTree,
+  deleteInscription,
+} from '#/indexing'
 import { IdResolver, MemoryCache } from '@atproto/identity'
 import { Event, Firehose } from '@atproto/sync'
 import pino from 'pino'
@@ -20,7 +24,6 @@ export function createIngester(db: Database) {
     ],
     handleEvent: async (evt: Event) => {
       if (evt.event === 'create' || evt.event === 'update') {
-        const now = new Date()
         const record = evt.record
 
         if (
@@ -32,50 +35,7 @@ export function createIngester(db: Database) {
             { uri: evt.uri.toString(), name: record.name },
             'ingesting tree',
           )
-
-          const imageCid = record.image?.ref?.toString() ?? null
-          const baseSlug = slugify(record.name)
-          const slug = await findUniqueSlug(db, baseSlug, evt.uri.toString())
-
-          await db
-            .insertInto('tree')
-            .values({
-              uri: evt.uri.toString(),
-              authorDid: evt.did,
-              name: record.name,
-              slug,
-              description: record.description ?? null,
-              imageCid,
-              latitude: record.latitude ?? null,
-              longitude: record.longitude ?? null,
-              createdAt: record.createdAt,
-              indexedAt: now.toISOString(),
-            })
-            .onConflict((oc) =>
-              oc.column('uri').doUpdateSet({
-                name: record.name,
-                description: record.description ?? null,
-                imageCid,
-                latitude: record.latitude ?? null,
-                longitude: record.longitude ?? null,
-                indexedAt: now.toISOString(),
-              }),
-            )
-            .execute()
-
-          // Register image in proxy table
-          if (imageCid) {
-            await db
-              .insertInto('image')
-              .values({
-                cid: imageCid,
-                authorDid: evt.did,
-                upstreamUrl: upstreamImageUrl(evt.did, imageCid),
-                createdAt: now.toISOString(),
-              })
-              .onConflict((oc) => oc.doNothing())
-              .execute()
-          }
+          await indexTree(db, evt.uri.toString(), evt.did, record)
         } else if (
           evt.collection === 'com.treeappreciation.inscription' &&
           Inscription.isRecord(record) &&
@@ -85,44 +45,7 @@ export function createIngester(db: Database) {
             { uri: evt.uri.toString(), tree: record.tree },
             'ingesting inscription',
           )
-
-          const imageCid = record.image?.ref?.toString() ?? null
-
-          await db
-            .insertInto('inscription')
-            .values({
-              uri: evt.uri.toString(),
-              authorDid: evt.did,
-              tree: record.tree,
-              text: record.text ?? null,
-              imageCid,
-              photoTakenAt: record.photoTakenAt ?? null,
-              createdAt: record.createdAt,
-              indexedAt: now.toISOString(),
-            })
-            .onConflict((oc) =>
-              oc.column('uri').doUpdateSet({
-                text: record.text ?? null,
-                imageCid,
-                photoTakenAt: record.photoTakenAt ?? null,
-                indexedAt: now.toISOString(),
-              }),
-            )
-            .execute()
-
-          // Register image in proxy table
-          if (imageCid) {
-            await db
-              .insertInto('image')
-              .values({
-                cid: imageCid,
-                authorDid: evt.did,
-                upstreamUrl: upstreamImageUrl(evt.did, imageCid),
-                createdAt: now.toISOString(),
-              })
-              .onConflict((oc) => oc.doNothing())
-              .execute()
-          }
+          await indexInscription(db, evt.uri.toString(), evt.did, record)
         }
       } else if (evt.event === 'delete') {
         if (evt.collection === 'com.treeappreciation.tree') {
@@ -130,19 +53,13 @@ export function createIngester(db: Database) {
             { uri: evt.uri.toString(), did: evt.did },
             'deleting tree',
           )
-          await db
-            .deleteFrom('tree')
-            .where('uri', '=', evt.uri.toString())
-            .execute()
+          await deleteTree(db, evt.uri.toString())
         } else if (evt.collection === 'com.treeappreciation.inscription') {
           logger.debug(
             { uri: evt.uri.toString(), did: evt.did },
             'deleting inscription',
           )
-          await db
-            .deleteFrom('inscription')
-            .where('uri', '=', evt.uri.toString())
-            .execute()
+          await deleteInscription(db, evt.uri.toString())
         }
       }
     },

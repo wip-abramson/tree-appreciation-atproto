@@ -4,15 +4,15 @@ type Props = {
   user: { did: string; displayName?: string; handle?: string; avatarUrl?: string }
 }
 
-const exifrScript = `
+const seedScript = `
 ;(function () {
   var input = document.getElementById('image-input')
   var preview = document.getElementById('image-preview')
+  var dropzone = document.getElementById('photo-dropzone')
   var latField = document.getElementById('latitude')
   var lngField = document.getElementById('longitude')
   var feedback = document.getElementById('gps-feedback')
   var hideCheckbox = document.getElementById('hide-location')
-  var locationRow = document.querySelector('.tree-form-row')
   var mapEl = document.getElementById('seed-map')
 
   // --- Map setup ---
@@ -27,7 +27,7 @@ const exifrScript = `
   }).addTo(map)
 
   // Search control
-  var geocoder = L.Control.geocoder({
+  L.Control.geocoder({
     defaultMarkGeocode: false,
     placeholder: 'Search for a place...',
     collapsed: false
@@ -67,35 +67,22 @@ const exifrScript = `
     }
   }
 
-  function updateFromFields() {
-    var lat = parseFloat(latField.value)
-    var lng = parseFloat(lngField.value)
-    if (!isNaN(lat) && !isNaN(lng)) {
-      placeMarker(lat, lng, true)
-    }
-  }
-
   // Click map to set location
   map.on('click', function (e) {
     if (hideCheckbox.checked) return
-    var lat = e.latlng.lat.toFixed(6)
-    var lng = e.latlng.lng.toFixed(6)
-    latField.value = lat
-    lngField.value = lng
+    latField.value = e.latlng.lat.toFixed(6)
+    lngField.value = e.latlng.lng.toFixed(6)
     placeMarker(e.latlng.lat, e.latlng.lng, false)
     feedback.textContent = 'Location set from map.'
     feedback.className = 'gps-feedback gps-found'
   })
 
-  // Sync fields → map on manual edit
-  latField.addEventListener('change', updateFromFields)
-  lngField.addEventListener('change', updateFromFields)
-
-  // --- Image upload + EXIF ---
+  // --- Photo upload + EXIF ---
   input.addEventListener('change', function () {
     var file = input.files[0]
     if (!file) {
       preview.style.display = 'none'
+      dropzone.classList.remove('has-photo')
       feedback.textContent = ''
       return
     }
@@ -104,6 +91,7 @@ const exifrScript = `
     reader.onload = function (e) {
       preview.src = e.target.result
       preview.style.display = 'block'
+      dropzone.classList.add('has-photo')
     }
     reader.readAsDataURL(file)
 
@@ -117,19 +105,18 @@ const exifrScript = `
             latField.value = gps.latitude.toFixed(6)
             lngField.value = gps.longitude.toFixed(6)
             placeMarker(gps.latitude, gps.longitude, true)
-            feedback.textContent =
-              'GPS coordinates found in image and auto-filled.'
+            feedback.textContent = 'The photo remembers where it was taken.'
             feedback.className = 'gps-feedback gps-found'
           } else {
             feedback.textContent =
-              'No GPS data found in image. You can click the map or enter coordinates.'
+              'No location in this photo \\u2014 tap the map to place the tree, or leave it unplaced.'
             feedback.className = 'gps-feedback gps-not-found'
           }
         })
         .catch(function () {
           if (hideCheckbox.checked) return
           feedback.textContent =
-            'No GPS data found in image. You can click the map or enter coordinates.'
+            'No location in this photo \\u2014 tap the map to place the tree, or leave it unplaced.'
           feedback.className = 'gps-feedback gps-not-found'
         })
     }
@@ -140,18 +127,12 @@ const exifrScript = `
     if (hideCheckbox.checked) {
       latField.value = ''
       lngField.value = ''
-      latField.disabled = true
-      lngField.disabled = true
-      locationRow.style.opacity = '0.4'
       mapEl.style.opacity = '0.4'
       mapEl.style.pointerEvents = 'none'
       removeMarker()
       feedback.textContent = ''
       feedback.className = 'gps-feedback'
     } else {
-      latField.disabled = false
-      lngField.disabled = false
-      locationRow.style.opacity = '1'
       mapEl.style.opacity = '1'
       mapEl.style.pointerEvents = ''
     }
@@ -162,7 +143,7 @@ const exifrScript = `
 export function SeedTree({ user }: Props) {
   return (
     <Shell
-      title="Seed a Tree — Tree Appreciation"
+      title="Seed a Presence — Tree Appreciation"
       user={user}
       headContent={
         <>
@@ -176,98 +157,48 @@ export function SeedTree({ user }: Props) {
     >
       <div id="root">
         <div id="header">
-          <h1>Tree Appreciation</h1>
-          <p>
-            <a href="/">Back to all trees</a>
-          </p>
+          <h1>
+            <a href="/">Tree Appreciation</a>
+          </h1>
         </div>
         <div className="container">
-          <div className="card">
-            <h2>Seed Tree Presence</h2>
-            <form
-              action="/tree"
-              method="post"
-              encType="multipart/form-data"
-              className="tree-form"
-            >
-              <label>
-                Name
-                <input
-                  type="text"
-                  name="name"
-                  placeholder="e.g. The Old Oak on Elm Street"
-                  required
-                  maxLength={200}
-                />
-              </label>
-              <label>
-                Description (optional)
-                <textarea
-                  name="description"
-                  placeholder="What makes this tree special?"
-                  maxLength={1000}
-                  rows={3}
-                ></textarea>
-              </label>
-              <label>
-                URL slug (optional)
-                <input
-                  type="text"
-                  name="slug"
-                  placeholder="e.g. old-oak-on-elm-street"
-                  maxLength={200}
-                />
-                <span className="form-hint">
-                  Auto-generates from the name if left blank.
-                </span>
-              </label>
-              <label>
-                Photo (JPEG or PNG, required)
-                <input
-                  type="file"
-                  id="image-input"
-                  name="image"
-                  accept="image/*"
-                  required
-                />
-              </label>
-              <img id="image-preview" alt="Preview" />
-              <p className="form-hint">
-                If your photo has GPS data, coordinates will be extracted
-                automatically.
-              </p>
-              <div id="gps-feedback" className="gps-feedback"></div>
-              <label className="checkbox-label">
-                <input type="checkbox" id="hide-location" name="hideLocation" />
-                Don't share location
-              </label>
-              <div className="tree-form-row">
-                <label>
-                  Latitude
-                  <input
-                    type="text"
-                    id="latitude"
-                    name="latitude"
-                    placeholder="e.g. 40.7128"
-                  />
-                </label>
-                <label>
-                  Longitude
-                  <input
-                    type="text"
-                    id="longitude"
-                    name="longitude"
-                    placeholder="e.g. -74.0060"
-                  />
-                </label>
-              </div>
-              <div id="seed-map" className="seed-map"></div>
-              <p className="form-hint">Click the map to set or adjust the location.</p>
-              <button type="submit">Seed this presence</button>
-            </form>
-          </div>
+          <form
+            action="/tree"
+            method="post"
+            encType="multipart/form-data"
+            className="seed-form"
+          >
+            <p className="seed-invitation">
+              You're with a tree. A photo is enough.
+            </p>
+
+            <label id="photo-dropzone" className="photo-dropzone">
+              <img id="image-preview" alt="" />
+              <span className="photo-dropzone-prompt">Add a photo of the tree</span>
+              <input
+                type="file"
+                id="image-input"
+                name="image"
+                accept="image/*"
+                required
+              />
+            </label>
+
+            <div id="gps-feedback" className="gps-feedback"></div>
+
+            <input type="hidden" id="latitude" name="latitude" />
+            <input type="hidden" id="longitude" name="longitude" />
+
+            <div id="seed-map" className="seed-map"></div>
+            <label className="checkbox-label">
+              <input type="checkbox" id="hide-location" name="hideLocation" />
+              Keep the location private
+            </label>
+
+            <button type="submit">Seed this presence</button>
+          </form>
         </div>
-        <script dangerouslySetInnerHTML={{ __html: exifrScript }} />
+        <script dangerouslySetInnerHTML={{ __html: seedScript }} />
       </div>
     </Shell>
   )

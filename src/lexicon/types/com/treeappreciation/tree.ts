@@ -7,7 +7,9 @@ import { isObj, hasProp } from '../../../util'
 import { CID } from 'multiformats/cid'
 
 export interface Record {
-  name: string
+  name?: string
+  /** A nearby place label grounding the tree in the physical world, e.g. reverse-geocoded from coordinates */
+  place?: string
   description?: string
   image?: BlobRef
   latitude?: string

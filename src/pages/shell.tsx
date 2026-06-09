@@ -12,11 +12,13 @@ export function Shell({
   children,
   headContent,
   user,
+  hideLoginLink,
 }: {
   title: string
   children: React.ReactNode
   headContent?: React.ReactNode
   user?: User
+  hideLoginLink?: boolean
 }) {
   return (
     <html>
@@ -29,6 +31,13 @@ export function Shell({
         {headContent}
       </head>
       <body>
+        {!user && !hideLoginLink && (
+          <div className="account-bar">
+            <a className="account-login" href="/login">
+              log in
+            </a>
+          </div>
+        )}
         {user && (
           <div className="account-bar">
             <details className="account-menu">
