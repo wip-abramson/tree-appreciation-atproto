@@ -35,6 +35,34 @@ export async function indexTree(
   const now = new Date()
   const imageCid = record.image?.ref?.toString() ?? null
 
+  // Identity is the photo: a steward should have at most one presence per
+  // image. If another tree by this author already carries the same
+  // content-addressed CID, the two records are duplicates (e.g. a record
+  // written twice during a flaky submission). Keep the earliest-created one so
+  // the choice is deterministic regardless of firehose/backfill ordering, and
+  // skip indexing the later duplicate so it never surfaces as a second tree.
+  if (imageCid) {
+    const dups = await db
+      .selectFrom('tree')
+      .select(['uri', 'createdAt'])
+      .where('authorDid', '=', did)
+      .where('imageCid', '=', imageCid)
+      .where('uri', '!=', uri)
+      .execute()
+    for (const dup of dups) {
+      const incomingIsEarlier =
+        record.createdAt < dup.createdAt ||
+        (record.createdAt === dup.createdAt && uri < dup.uri)
+      if (incomingIsEarlier) {
+        // This record is the keeper; remove the later duplicate row.
+        await db.deleteFrom('tree').where('uri', '=', dup.uri).execute()
+      } else {
+        // An earlier presence for this photo already exists; don't duplicate it.
+        return
+      }
+    }
+  }
+
   // Named (legacy) trees get name-based slugs; nameless trees use the rkey
   const baseSlug = record.name ? slugify(record.name) : rkeyFromUri(uri)
   const slug = await findUniqueSlug(db, baseSlug, uri)
@@ -51,6 +79,7 @@ export async function indexTree(
       imageCid,
       latitude: record.latitude ?? null,
       longitude: record.longitude ?? null,
+      photoTakenAt: record.photoTakenAt ?? null,
       createdAt: record.createdAt,
       indexedAt: now.toISOString(),
     })
@@ -62,6 +91,7 @@ export async function indexTree(
         imageCid,
         latitude: record.latitude ?? null,
         longitude: record.longitude ?? null,
+        photoTakenAt: record.photoTakenAt ?? null,
         indexedAt: now.toISOString(),
       }),
     )

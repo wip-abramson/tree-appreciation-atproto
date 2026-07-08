@@ -13,6 +13,7 @@ const seedScript = `
   var lngField = document.getElementById('longitude')
   var feedback = document.getElementById('gps-feedback')
   var hideCheckbox = document.getElementById('hide-location')
+  var takenField = document.getElementById('photo-taken-at')
   var mapEl = document.getElementById('seed-map')
 
   // --- Map setup ---
@@ -94,6 +95,23 @@ const seedScript = `
       dropzone.classList.add('has-photo')
     }
     reader.readAsDataURL(file)
+
+    // Capture when the photo was taken (regardless of location privacy)
+    if (typeof exifr !== 'undefined') {
+      exifr
+        .parse(file)
+        .then(function (exif) {
+          var raw = exif && exif.DateTimeOriginal
+          if (raw instanceof Date && !isNaN(raw.getTime())) {
+            takenField.value = raw.toISOString()
+          } else {
+            takenField.value = ''
+          }
+        })
+        .catch(function () {
+          takenField.value = ''
+        })
+    }
 
     if (typeof exifr !== 'undefined' && !hideCheckbox.checked) {
       exifr
@@ -188,6 +206,7 @@ export function SeedTree({ user }: Props) {
 
             <input type="hidden" id="latitude" name="latitude" />
             <input type="hidden" id="longitude" name="longitude" />
+            <input type="hidden" id="photo-taken-at" name="photoTakenAt" />
 
             <div id="seed-map" className="seed-map"></div>
             <label className="checkbox-label">

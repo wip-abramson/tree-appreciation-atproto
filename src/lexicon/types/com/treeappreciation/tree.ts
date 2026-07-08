@@ -15,6 +15,8 @@ export interface Record {
   latitude?: string
   longitude?: string
   createdAt: string
+  /** When the photo was taken, from EXIF or manual entry */
+  photoTakenAt?: string
   [k: string]: unknown
 }
 

@@ -191,7 +191,7 @@ function gatherMoments(
   if (tree.imageCid) {
     moments.push({
       src: buildImageUrl(tree.authorDid, tree.imageCid),
-      date: tree.createdAt,
+      date: tree.photoTakenAt ?? tree.createdAt,
       text: null,
       handle: didHandleMap[tree.authorDid] || tree.authorDid,
       isYou: tree.authorDid === currentDid,

@@ -33,6 +33,7 @@ export type Tree = {
   imageCid: string | null
   latitude: string | null
   longitude: string | null
+  photoTakenAt: string | null
   createdAt: string
   indexedAt: string
 }
@@ -398,6 +399,15 @@ migrations['009'] = {
       .on('tree')
       .column('slug')
       .execute()
+  },
+}
+
+migrations['010'] = {
+  async up(db: Kysely<unknown>) {
+    await db.schema.alterTable('tree').addColumn('photoTakenAt', 'varchar').execute()
+  },
+  async down(db: Kysely<unknown>) {
+    await db.schema.alterTable('tree').dropColumn('photoTakenAt').execute()
   },
 }
 

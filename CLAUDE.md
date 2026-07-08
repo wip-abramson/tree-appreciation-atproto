@@ -14,7 +14,8 @@ The app uses the `com.treeappreciation.*` namespace with two record types: `com.
 - `npm run build` — Production build via tsup
 - `npm start` — Run production build (`node dist/index.js`)
 - `npm run lexgen` — Regenerate TypeScript types from lexicon JSON schemas in `lexicons/` into `src/lexicon/`
-- `npm run backfill` — Index existing `com.treeappreciation.*` records from the live network (relay repo discovery + per-PDS `listRecords`). Use a persistent `DB_PATH`; the firehose only streams new events, so a fresh DB needs this to see the global data
+- `npm run backfill` — Index existing `com.treeappreciation.*` records from the live network (relay repo discovery + per-PDS `listRecords`). Use a persistent `DB_PATH`; the firehose only streams new events, so a fresh DB needs this to see the global data. The server also runs this automatically on boot **when the index is empty** (a fresh/lost persistent volume) — see Boot Sequence. The same logic compiles to `dist/scripts/backfill.js` for manual prod runs (`node dist/scripts/backfill.js`, e.g. via `fly ssh console`)
+- `npm run dedupe-trees` — One-off cleanup for duplicate tree presences (same author + same image CID, e.g. from a double submission). Keeps the earliest, re-points inscriptions/followers/inbox onto it, and durably deletes the duplicate record from the author's PDS repo via their stored OAuth session. Respects `DB_PATH`; pass `-- --dry-run` to report without changing anything. Builds to `dist/scripts/dedupe-trees.js` for prod
 - `npm run clean` — Remove dist and coverage directories
 - `./bin/gen-jwk` — Generate a JWK private key for production OAuth
 
@@ -25,7 +26,8 @@ The app uses the `com.treeappreciation.*` namespace with two record types: `com.
 1. `createAppContext()` initializes all dependencies (DB, OAuth client, firehose ingester, logger, ID resolver, AP signing keypair) into an `AppContext` object
 2. `createRouter(ctx)` sets up Express routes
 3. HTTP server starts, then firehose subscription begins
-4. Graceful shutdown on SIGINT/SIGTERM
+4. `maybeBackfillOnBoot()` runs: if the `tree` table is empty (or `BACKFILL_ON_BOOT=true`), it kicks off `runBackfill()` from `src/scripts/backfill.ts` in the background (non-blocking, so a slow/unavailable relay never blocks boot). This self-seeds history on a fresh persistent volume; populated volumes skip it and rely on the firehose. Indexing is idempotent (upserts), so re-runs are safe
+5. Graceful shutdown on SIGINT/SIGTERM
 
 ### Key Layers
 

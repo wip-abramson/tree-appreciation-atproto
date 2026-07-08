@@ -340,6 +340,12 @@ export const schemaDict = {
               type: 'string',
               format: 'datetime',
             },
+            photoTakenAt: {
+              type: 'string',
+              format: 'datetime',
+              description:
+                'When the photo was taken, from EXIF or manual entry',
+            },
           },
         },
       },

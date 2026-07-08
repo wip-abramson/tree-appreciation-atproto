@@ -1,7 +1,7 @@
 import { Agent } from '@atproto/api'
 import { TID } from '@atproto/common'
 import { OAuthResolverError } from '@atproto/oauth-client-node'
-import { gps as exifrGps, parse as exifrParse } from 'exifr'
+import { parse as exifrParse } from 'exifr'
 import express, { Request, Response } from 'express'
 import { getIronSession } from 'iron-session'
 import multer from 'multer'
@@ -1267,23 +1267,26 @@ export const createRouter = (ctx: AppContext): RequestListener => {
       // Extract EXIF GPS from uploaded image if present
       let exifLat: string | undefined
       let exifLng: string | undefined
+      let exifDatetime: string | undefined
       let imageBlob: unknown | undefined
       let imageCid: string | null = null
 
       {
-        // Extract GPS from EXIF before stripping
+        // Extract GPS and datetime from EXIF before stripping
         try {
-          const gps = await exifrGps(req.file.buffer)
-          if (gps) {
-            const lat = Number(gps.latitude)
-            const lng = Number(gps.longitude)
-            if (!isNaN(lat) && !isNaN(lng)) {
-              exifLat = String(lat)
-              exifLng = String(lng)
-            }
+          const exif = await exifrParse(req.file.buffer)
+          const lat = Number(exif?.latitude)
+          const lng = Number(exif?.longitude)
+          if (!isNaN(lat) && !isNaN(lng)) {
+            exifLat = String(lat)
+            exifLng = String(lng)
+          }
+          const raw = exif?.DateTimeOriginal
+          if (raw instanceof Date && !isNaN(raw.getTime())) {
+            exifDatetime = raw.toISOString()
           }
         } catch (err) {
-          ctx.logger.debug({ err }, 'no EXIF GPS data found')
+          ctx.logger.debug({ err }, 'no EXIF GPS/datetime data found')
         }
 
         // Strip EXIF and downscale if needed
@@ -1300,6 +1303,28 @@ export const createRouter = (ctx: AppContext): RequestListener => {
           })
           imageBlob = uploadRes.data.blob
           imageCid = uploadRes.data.blob.ref.toString()
+        }
+      }
+
+      // Identity is the photo. uploadBlob is content-addressed, so a duplicate
+      // submission (a flaky-network retry, a double tap) re-uploads the same
+      // bytes and produces the same CID. If this steward already has a presence
+      // for this exact image, return it instead of minting a second tree — you
+      // can never seed the same photo twice. (The re-uploaded blob is harmless:
+      // it dedupes to the same CID and, unreferenced, is GC'd by the PDS.)
+      if (imageCid && !imageCid.startsWith('mock-')) {
+        const existing = await ctx.db
+          .selectFrom('tree')
+          .select('slug')
+          .where('authorDid', '=', agent.assertDid)
+          .where('imageCid', '=', imageCid)
+          .executeTakeFirst()
+        if (existing) {
+          ctx.logger.info(
+            { did: agent.assertDid, imageCid, slug: existing.slug },
+            'duplicate tree submission for an existing photo; redirecting to the existing presence',
+          )
+          return res.redirect(`/tree/${existing.slug}`)
         }
       }
 
@@ -1320,6 +1345,12 @@ export const createRouter = (ctx: AppContext): RequestListener => {
         place = (await reverseGeocodePlace(latitude, longitude)) ?? undefined
       }
 
+      // photoTakenAt: form value > EXIF value > omitted
+      const formPhotoTakenAt = req.body?.photoTakenAt
+        ? new Date(req.body.photoTakenAt).toISOString()
+        : undefined
+      const photoTakenAt = formPhotoTakenAt ?? exifDatetime
+
       const record: Record<string, unknown> = {
         $type: 'com.treeappreciation.tree',
         image: imageBlob,
@@ -1328,6 +1359,7 @@ export const createRouter = (ctx: AppContext): RequestListener => {
       if (place) record.place = place
       if (latitude) record.latitude = latitude
       if (longitude) record.longitude = longitude
+      if (photoTakenAt) record.photoTakenAt = photoTakenAt
 
       if (!env.MOCK_WRITES && !Tree.validateRecord(record).success) {
         return res
@@ -1376,6 +1408,7 @@ export const createRouter = (ctx: AppContext): RequestListener => {
             imageCid,
             latitude: latitude ?? null,
             longitude: longitude ?? null,
+            photoTakenAt: photoTakenAt ?? null,
             createdAt: record.createdAt as string,
             indexedAt: new Date().toISOString(),
           })

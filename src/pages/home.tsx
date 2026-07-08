@@ -161,7 +161,7 @@ export function Home({ trees, user }: Props) {
       <div id="root">
         <div id="header">
           <h1>Tree Appreciation</h1>
-          <p className="tagline">Notice a tree. Return to it.</p>
+          <p className="tagline">Create lasting presences for the trees around you.</p>
         </div>
         <div className="grove">
           {trees.length > 0 ? (

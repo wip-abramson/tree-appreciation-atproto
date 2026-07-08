@@ -23,4 +23,7 @@ export const env = cleanEnv(process.env, {
   PLC_URL: url({ default: undefined }),
   FIREHOSE_URL: url({ default: undefined }),
   MOCK_WRITES: bool({ devDefault: true, default: false }),
+  // Force a network backfill on boot even when the index already has data.
+  // By default the server only backfills when the index is empty.
+  BACKFILL_ON_BOOT: bool({ default: false }),
 })

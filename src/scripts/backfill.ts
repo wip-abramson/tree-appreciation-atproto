@@ -13,13 +13,11 @@ import { jsonToLex } from '@atproto/lexicon'
 import { IdResolver, MemoryCache } from '@atproto/identity'
 import pino from 'pino'
 
-import { createDb, migrateToLatest } from '#/db'
+import { createDb, Database, migrateToLatest } from '#/db'
 import { env } from '#/env'
 import * as Tree from '#/lexicon/types/com/treeappreciation/tree'
 import * as Inscription from '#/lexicon/types/com/treeappreciation/inscription'
 import { indexTree, indexInscription } from '#/indexing'
-
-const logger = pino({ name: 'backfill', level: env.LOG_LEVEL })
 
 const COLLECTIONS = [
   'com.treeappreciation.tree',
@@ -88,16 +86,16 @@ async function listRecords(
   return records
 }
 
-async function main() {
-  const db = createDb(env.DB_PATH)
-  await migrateToLatest(db)
-
-  if (env.DB_PATH === ':memory:') {
-    logger.warn(
-      'DB_PATH is :memory: — the backfilled index will vanish when this process exits. Set DB_PATH to a file (e.g. ./data/dev.db) to keep it.',
-    )
-  }
-
+/**
+ * Discover every repo holding com.treeappreciation.* records via the relay,
+ * fetch each owner's records from their PDS, and index them with the same
+ * logic the firehose ingester uses. Idempotent — indexing upserts, so this is
+ * safe to re-run (e.g. on boot when the index is empty).
+ */
+export async function runBackfill(
+  db: Database,
+  logger: pino.Logger,
+): Promise<{ repos: number; trees: number; inscriptions: number }> {
   const idResolver = new IdResolver({
     plcUrl: env.PLC_URL,
     didCache: new MemoryCache(),
@@ -159,10 +157,37 @@ async function main() {
   }
 
   logger.info({ repos: dids.size, trees, inscriptions }, 'backfill complete')
-  await db.destroy()
+  return { repos: dids.size, trees, inscriptions }
 }
 
-main().catch((err) => {
-  logger.error({ err }, 'backfill failed')
-  process.exit(1)
-})
+async function main() {
+  const logger = pino({ name: 'backfill', level: env.LOG_LEVEL })
+  const db = createDb(env.DB_PATH)
+  await migrateToLatest(db)
+
+  if (env.DB_PATH === ':memory:') {
+    logger.warn(
+      'DB_PATH is :memory: — the backfilled index will vanish when this process exits. Set DB_PATH to a file (e.g. ./data/dev.db) to keep it.',
+    )
+  }
+
+  try {
+    await runBackfill(db, logger)
+  } finally {
+    await db.destroy()
+  }
+}
+
+// Only run as a CLI when invoked directly (not when imported by the server).
+// Filename check works under both tsx (dev) and the CJS build (prod), where
+// `import.meta.url` is unavailable.
+const invokedDirectly = /[\\/]backfill\.[jt]s$/.test(process.argv[1] ?? '')
+if (invokedDirectly) {
+  main().catch((err) => {
+    pino({ name: 'backfill', level: env.LOG_LEVEL }).error(
+      { err },
+      'backfill failed',
+    )
+    process.exit(1)
+  })
+}
