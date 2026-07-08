@@ -11,7 +11,14 @@ export const env = cleanEnv(process.env, {
   }),
   PORT: port({ devDefault: testOnly(3000) }),
   PUBLIC_URL: url({ default: undefined }),
-  DB_PATH: str({ devDefault: ':memory:' }),
+  // Optional: only used on the SQLite path. Production sets DATABASE_URL
+  // instead and never reads this, so it must not be required there.
+  DB_PATH: str({ devDefault: ':memory:', default: ':memory:' }),
+  // When set, the app uses Postgres (via this connection string) instead of the
+  // SQLite file at DB_PATH. Production sets this to the Fly Managed Postgres URL
+  // so multiple stateless machines share one HA database; dev/test leave it
+  // empty and keep the fast in-memory SQLite path. See docs/postgres.md.
+  DATABASE_URL: str({ default: '' }),
   COOKIE_SECRET: str({ devDefault: '00000000000000000000000000000000' }),
   PRIVATE_KEYS: keys({ default: undefined }),
   LOG_LEVEL: str({
