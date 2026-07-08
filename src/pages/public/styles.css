@@ -82,6 +82,19 @@ h6 {
   isolation: isolate;
 }
 
+/* Visually hidden, still announced to assistive tech */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /*
   Common components
 */
@@ -368,11 +381,210 @@ button:hover,
   border-radius: 0;
 }
 
+/* ============================================
+   Login — the steward's threshold (rare, quiet, vow-first)
+   ============================================ */
+.threshold {
+  max-width: 460px;
+  margin: 0 auto;
+  padding: clamp(2rem, 8vh, 5rem) 20px 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.threshold-back {
+  align-self: flex-start;
+  font-family: 'DM Mono', 'Courier New', monospace;
+  font-size: 0.78rem;
+  color: var(--bark-500);
+  text-decoration: none;
+}
+
+.threshold-back:hover {
+  color: var(--green-600);
+}
+
+.threshold-back:focus-visible {
+  outline: 2px solid var(--green-400);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+.threshold-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.threshold-title {
+  font-family: 'Newsreader', Georgia, serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 1.9rem;
+  line-height: 1.2;
+  color: var(--bark-600);
+  text-wrap: balance;
+}
+
+.threshold-lead {
+  color: var(--bark-500);
+  font-size: 1rem;
+  line-height: 1.6;
+  max-width: 42ch;
+  text-wrap: pretty;
+}
+
+/* The vow is the foreground; the auth machinery recedes behind it. */
+.threshold-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.vow {
+  font-family: 'Newsreader', Georgia, serif;
+  font-style: italic;
+  font-size: 1.3rem;
+  line-height: 1.7;
+  color: var(--bark-600);
+  text-wrap: pretty;
+}
+
+.vow-affirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  cursor: pointer;
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 1rem;
+  color: var(--bark-600);
+  user-select: none;
+}
+
+.vow-affirm input {
+  flex: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-top: 0.28rem;
+  accent-color: var(--green-500);
+  cursor: pointer;
+}
+
+.vow-affirm input:focus-visible {
+  outline: 2px solid var(--green-400);
+  outline-offset: 2px;
+}
+
+/* Auth: recessive until the vow is affirmed (JS adds .is-gated). */
+.threshold-auth {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  transition: opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.threshold-form.is-gated:not(.is-affirmed) .threshold-auth {
+  opacity: 0.5;
+}
+
+.handle-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.handle-row input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--bark-200);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  background: #fff;
+  font-size: 1rem;
+  color: var(--gray-700);
+}
+
+.handle-row input::placeholder {
+  color: var(--bark-400);
+}
+
+.handle-row input:focus-visible {
+  outline: 2px solid var(--green-400);
+  outline-offset: 1px;
+  border-color: var(--green-300);
+}
+
+.threshold-primary {
+  white-space: nowrap;
+  padding: 0.6rem 1.1rem;
+  border-radius: 8px;
+}
+
+.threshold-secondary,
+.threshold-secondary:hover {
+  align-self: flex-start;
+  background: none;
+  border: 0;
+  padding: 0.2rem 0;
+  color: var(--green-600);
+  font-weight: 600;
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+
+.threshold-secondary:hover {
+  text-decoration: underline;
+}
+
+.threshold-secondary:focus-visible {
+  outline: 2px solid var(--green-400);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+.threshold-form button:disabled {
+  background: var(--bark-100);
+  color: var(--bark-400);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.threshold-secondary:disabled {
+  background: none;
+  color: var(--bark-300);
+  text-decoration: none;
+}
+
+.threshold-error {
+  color: var(--error-500);
+  background: var(--error-100);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 480px) {
+  .handle-row {
+    flex-direction: column;
+  }
+
+  .threshold-primary {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .threshold-auth {
+    transition: none;
+  }
+}
+
 /* The grove — quiet, image-forward, unranked */
 #header .tagline {
   font-family: 'Newsreader', Georgia, serif;
   font-style: italic;
-  color: var(--bark-400);
+  color: var(--bark-500);
   font-size: 1.05rem;
 }
 
@@ -384,10 +596,10 @@ button:hover,
 .grove {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 22px;
   margin: 0 auto;
-  max-width: 720px;
-  padding: 20px;
+  max-width: 760px;
+  padding: 28px 20px 20px;
 }
 
 .empty-state {
@@ -397,56 +609,87 @@ button:hover,
   text-align: center;
 }
 
-/* Orient by the trees around you */
-.orient-row {
-  text-align: center;
+/* A single quiet invitation — orientation is offered, never forced */
+.grove-intro {
+  display: flex;
+  justify-content: center;
 }
 
 .orient-btn {
-  background: none;
-  border: none;
-  padding: 2px 4px;
-  color: var(--green-500);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #fff;
+  border: 1px solid var(--bark-200);
+  border-radius: 999px;
+  padding: 0.5rem 1.1rem;
+  color: var(--green-600);
   font-family: 'Newsreader', Georgia, serif;
   font-style: italic;
-  font-size: 1rem;
+  font-size: 1.05rem;
   font-weight: 400;
   cursor: pointer;
-  text-decoration: underline;
-  text-decoration-color: var(--green-200);
-  text-underline-offset: 3px;
+  box-shadow: 0 1px 3px rgba(74, 60, 46, 0.06);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .orient-btn:hover {
-  background: none;
-  text-decoration-color: var(--green-400);
+  background: #fff;
+  border-color: var(--green-300);
+  box-shadow: 0 4px 14px rgba(58, 125, 42, 0.14);
+  transform: translateY(-1px);
 }
 
-.orient-btn:disabled {
-  color: var(--bark-400);
-  text-decoration: none;
+.orient-btn:focus-visible {
+  outline: 2px solid var(--green-400);
+  outline-offset: 2px;
+}
+
+.orient-mark {
+  color: var(--green-400);
+  font-style: normal;
+  font-size: 0.85em;
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.orient-btn:hover .orient-mark {
+  transform: rotate(72deg) scale(1.15);
+}
+
+.orient-btn.is-oriented {
+  color: var(--bark-500);
+  border-color: var(--bark-200);
+  box-shadow: none;
   cursor: default;
+}
+
+.orient-btn.is-oriented .orient-mark {
+  color: var(--green-500);
 }
 
 .grove-card-distance {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  background: rgba(0, 0, 0, 0.45);
-  color: rgba(255, 255, 255, 0.92);
+  top: 9px;
+  right: 9px;
+  z-index: 3;
+  background: rgba(20, 14, 8, 0.72);
+  color: #fff;
   font-family: 'DM Mono', 'Courier New', monospace;
-  font-size: 0.68rem;
-  padding: 2px 7px;
+  font-size: 0.72rem;
+  padding: 2px 8px;
   border-radius: 10px;
 }
 
 /* Quiet footer — seeding is an afterword, not a call to action */
 .grove-foot {
   text-align: center;
-  color: var(--bark-400);
+  color: var(--bark-500);
   font-style: italic;
   font-size: 0.95rem;
-  padding: 0.5rem 0 1.5rem;
+  padding: 1rem 0 1.5rem;
 }
 
 .grove-foot a {
@@ -456,34 +699,97 @@ button:hover,
 
 .grove-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
 }
 
 .grove-card {
   position: relative;
   display: block;
-  border-radius: 8px;
+  border-radius: 10px;
   overflow: hidden;
   text-decoration: none;
   color: inherit;
   background-color: var(--bark-100);
+  box-shadow: 0 1px 3px rgba(74, 60, 46, 0.08);
+  transition:
+    box-shadow 0.3s ease,
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.grove-card:hover {
+  box-shadow: 0 6px 18px rgba(38, 92, 26, 0.14);
+  transform: translateY(-1px);
+}
+
+.grove-card:focus-visible {
+  outline: 2px solid var(--green-400);
+  outline-offset: 2px;
+}
+
+.grove-card-media {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
 }
 
 .grove-card-image {
   width: 100%;
-  aspect-ratio: 1;
+  height: 100%;
   object-fit: cover;
-  transition: transform 0.6s ease;
+  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .grove-card:hover .grove-card-image {
   transform: scale(1.03);
 }
 
+/* Hover timelapse frames, injected on first hover, crossfading in place */
+.grove-card-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.8s ease;
+  pointer-events: none;
+}
+
+.grove-card-frame.is-active {
+  opacity: 1;
+}
+
 .grove-card-placeholder {
-  aspect-ratio: 1;
+  width: 100%;
+  height: 100%;
   background: linear-gradient(160deg, var(--green-100), var(--bark-200));
+}
+
+/* A photo that fails to load settles into the same quiet placeholder */
+.grove-card-media.is-imageless {
+  background: linear-gradient(160deg, var(--green-100), var(--bark-200));
+}
+
+/* Concentric rings: this tree carries more than one moment */
+.grove-rings {
+  position: absolute;
+  top: 9px;
+  left: 9px;
+  z-index: 3;
+  width: 22px;
+  height: 22px;
+  color: rgba(255, 255, 255, 0.82);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
+  opacity: 0.75;
+  transition:
+    opacity 0.3s ease,
+    transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.grove-card:hover .grove-rings {
+  opacity: 1;
+  transform: scale(1.08);
 }
 
 .grove-card-place {
@@ -491,43 +797,14 @@ button:hover,
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 1.25rem 10px 8px;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.55));
-  color: rgba(255, 255, 255, 0.92);
+  z-index: 2;
+  padding: 1.5rem 10px 8px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.58));
+  color: rgba(255, 255, 255, 0.94);
   font-family: 'Newsreader', Georgia, serif;
   font-style: italic;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   line-height: 1.3;
-}
-
-/* Map of presences */
-.grove-map {
-  width: 100%;
-  height: 320px;
-  border-radius: 10px;
-  border: 1px solid var(--bark-200);
-  overflow: hidden;
-}
-
-.grove-map .leaflet-tile-pane {
-  filter: saturate(0.4) brightness(1.05);
-}
-
-.grove-map-popup {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  text-decoration: none;
-  color: var(--bark-600);
-  font-family: 'Newsreader', Georgia, serif;
-  font-style: italic;
-}
-
-.grove-map-popup img {
-  width: 140px;
-  height: 100px;
-  object-fit: cover;
-  border-radius: 4px;
 }
 
 /* ============================================
@@ -1208,13 +1485,13 @@ button:hover,
     font-size: 1rem;
   }
 
-  /* Home: header spacing — extra right padding for account bar */
+  /* Home: header — drop the title below the floating log-in link */
   #header {
-    padding: 0.5rem 56px 1.25rem;
+    padding: 2.25rem 16px 1.25rem;
   }
 
   #header h1 {
-    font-size: 2.2rem;
+    font-size: 2rem;
   }
 
   /* Home: seed CTA prominent */
@@ -1227,10 +1504,6 @@ button:hover,
   .grove-grid {
     grid-template-columns: repeat(2, 1fr);
     gap: 8px;
-  }
-
-  .grove-map {
-    height: 240px;
   }
 
   /* Seed form: taller map for finger placement */
@@ -1278,5 +1551,26 @@ button:hover,
 
   .lapse-caption {
     padding: 2rem 1rem 1.75rem;
+  }
+}
+
+/* Honour reduced-motion: the grove settles instead of animating.
+   (The hover timelapse is already disabled in JS under this preference.) */
+@media (prefers-reduced-motion: reduce) {
+  .grove-card,
+  .grove-card-image,
+  .grove-card-frame,
+  .grove-rings,
+  .orient-btn,
+  .orient-mark {
+    transition: none;
+  }
+
+  .grove-card:hover {
+    transform: none;
+  }
+
+  .grove-card:hover .grove-card-image {
+    transform: none;
   }
 }

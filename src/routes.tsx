@@ -23,6 +23,7 @@ import * as Inscription from '#/lexicon/types/com/treeappreciation/inscription'
 import { handler } from '#/lib/http'
 import { reverseGeocodePlace } from '#/lib/geocode'
 import { findUniqueSlug } from '#/lib/slug'
+import { newMockCid, readMockImage, saveMockImage } from '#/lib/mock-image-store'
 import { ifString, imageUrl, treeLabel, upstreamImageUrl } from '#/lib/util'
 import { page } from '#/lib/view'
 import { Home } from '#/pages/home'
@@ -282,9 +283,6 @@ async function deliverActivity(
   }
 }
 
-// In-memory store for mock image blobs (only used when MOCK_WRITES is enabled)
-const mockImageStore = new Map<string, { data: Buffer; mime: string }>()
-
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20_000_000 },
@@ -481,13 +479,13 @@ export const createRouter = (ctx: AppContext): RequestListener => {
     router.get(
       '/mock-image/:cid',
       handler((req, res) => {
-        const entry = mockImageStore.get(req.params.cid)
-        if (!entry) {
+        const data = readMockImage(req.params.cid)
+        if (!data) {
           return res.status(404).send('Not found')
         }
-        res.setHeader('content-type', entry.mime)
+        res.setHeader('content-type', 'image/jpeg')
         res.setHeader('cache-control', 'max-age=3600')
-        res.send(entry.data)
+        res.send(data)
       }),
     )
   }
@@ -634,10 +632,22 @@ export const createRouter = (ctx: AppContext): RequestListener => {
 
       // Initiate the OAuth flow
       try {
+        // The steward's vow is a required threshold — no crossing without it.
+        if (!ifString(req.body.vow)) {
+          return res
+            .status(400)
+            .type('html')
+            .send(
+              page(
+                <Login error="Please take up the steward's vow to continue." />,
+              ),
+            )
+        }
+
         // Validate input: can be a handle, a DID or a service URL (PDS).
         const input = ifString(req.body.input)
         if (!input) {
-          throw new Error('Invalid input')
+          throw new Error('Please enter your handle to cross the threshold.')
         }
 
         // Initiate the OAuth flow
@@ -656,13 +666,35 @@ export const createRouter = (ctx: AppContext): RequestListener => {
     }),
   )
 
-  // Signup
+  // Signup — a returning-empty steward taking the vow and using the default PDS.
+  // GET is only reached by stale links; send it back through the threshold.
   router.get(
     '/signup',
     handler(async (req, res) => {
-      res.setHeader('cache-control', `max-age=${MAX_AGE}, public`)
+      res.setHeader('cache-control', 'no-store')
+      return res.redirect('/login')
+    }),
+  )
+
+  router.post(
+    '/signup',
+    express.urlencoded(),
+    handler(async (req, res) => {
+      res.setHeader('cache-control', 'no-store')
 
       try {
+        // Same threshold as /login: the vow is required before any OAuth.
+        if (!ifString(req.body.vow)) {
+          return res
+            .status(400)
+            .type('html')
+            .send(
+              page(
+                <Login error="Please take up the steward's vow to continue." />,
+              ),
+            )
+        }
+
         const service = env.PDS_URL ?? 'https://bsky.social'
         const url = await ctx.oauthClient.authorize(service, {
           scope: 'atproto transition:generic',
@@ -852,7 +884,42 @@ export const createRouter = (ctx: AppContext): RequestListener => {
         ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
       }
 
-      res.type('html').send(page(<Home trees={shuffled} user={user} />))
+      // Gather each tree's photographic moments (cover + inscription photos)
+      // so the grove can quietly reveal its timelapse on hover. Only trees
+      // with two or more photos carry frames. One batched query, not N.
+      const treeUris = shuffled.map((t) => t.uri)
+      const photoRows = treeUris.length
+        ? await ctx.db
+            .selectFrom('inscription')
+            .select(['tree', 'authorDid', 'imageCid', 'photoTakenAt', 'createdAt'])
+            .where('tree', 'in', treeUris)
+            .where('imageCid', 'is not', null)
+            .execute()
+        : []
+
+      const momentsByUri: Record<string, { src: string; date: string }[]> = {}
+      for (const t of shuffled) {
+        if (!t.imageCid) continue
+        momentsByUri[t.uri] = [
+          { src: imageUrl(t.authorDid, t.imageCid), date: t.photoTakenAt ?? t.createdAt },
+        ]
+      }
+      for (const r of photoRows) {
+        if (!r.imageCid || !momentsByUri[r.tree]) continue
+        momentsByUri[r.tree].push({
+          src: imageUrl(r.authorDid, r.imageCid),
+          date: r.photoTakenAt ?? r.createdAt,
+        })
+      }
+
+      const framesByUri: Record<string, string[]> = {}
+      for (const [uri, moments] of Object.entries(momentsByUri)) {
+        if (moments.length < 2) continue
+        moments.sort((a, b) => a.date.localeCompare(b.date))
+        framesByUri[uri] = moments.map((m) => m.src)
+      }
+
+      res.type('html').send(page(<Home trees={shuffled} frames={framesByUri} user={user} />))
     }),
   )
 
@@ -1346,8 +1413,8 @@ export const createRouter = (ctx: AppContext): RequestListener => {
 
         if (env.MOCK_WRITES) {
           ctx.logger.info('MOCK_WRITES: skipping uploadBlob for tree image')
-          imageCid = `mock-${Date.now()}`
-          mockImageStore.set(imageCid, { data: cleaned.data, mime: cleaned.mimetype })
+          imageCid = newMockCid()
+          saveMockImage(imageCid, cleaned.data)
         } else {
           // Upload clean image to the user's repo
           const uploadRes = await agent.uploadBlob(cleaned.data, {
@@ -1540,8 +1607,8 @@ export const createRouter = (ctx: AppContext): RequestListener => {
 
         if (env.MOCK_WRITES) {
           ctx.logger.info('MOCK_WRITES: skipping uploadBlob for inscription image')
-          imageCid = `mock-${Date.now()}`
-          mockImageStore.set(imageCid, { data: cleaned.data, mime: cleaned.mimetype })
+          imageCid = newMockCid()
+          saveMockImage(imageCid, cleaned.data)
         } else {
           const uploadRes = await agent.uploadBlob(cleaned.data, {
             encoding: cleaned.mimetype,
