@@ -19,8 +19,17 @@ run(async (killSignal) => {
   const url = env.PUBLIC_URL || `http://localhost:${env.PORT}`
   ctx.logger.info(`Server (${env.NODE_ENV}) running at ${url}`)
 
-  // Subscribe to events on the firehose
-  ctx.ingester.start()
+  // Subscribe to events on the firehose only when explicitly enabled. In
+  // production the ingester runs as a separate process (`src/ingester-runner.ts`)
+  // so that decoding the full network firehose never blocks the HTTP event loop.
+  if (env.FIREHOSE_ENABLED) {
+    ctx.logger.info('FIREHOSE_ENABLED=true — running firehose ingester in-process')
+    ctx.ingester.start()
+  } else {
+    ctx.logger.info(
+      'firehose ingester disabled in web process (run `npm run start:ingester` separately)',
+    )
+  }
 
   // Wait for a termination signal
   if (!killSignal.aborted) await once(killSignal, 'abort')

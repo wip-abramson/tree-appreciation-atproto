@@ -11,8 +11,10 @@ The app uses the `com.treeappreciation.*` namespace with two record types: `com.
 ## Commands
 
 - `npm run dev` — Start dev server with hot reload (tsx watch + pino-pretty), serves at http://localhost:8080
-- `npm run build` — Production build via tsup
+- `npm run dev:ingester` — Start the firehose ingester as a separate process (dev)
+- `npm run build` — Production build via tsup (builds both `index.js` and `ingester-runner.js`)
 - `npm start` — Run production build (`node dist/index.js`)
+- `npm run start:ingester` — Run the firehose ingester process (`node dist/ingester-runner.js`)
 - `npm run lexgen` — Regenerate TypeScript types from lexicon JSON schemas in `lexicons/` into `src/lexicon/`
 - `npm run clean` — Remove dist and coverage directories
 - `./bin/gen-jwk` — Generate a JWK private key for production OAuth
@@ -36,7 +38,7 @@ The app uses the `com.treeappreciation.*` namespace with two record types: `com.
 
 **AT Protocol OAuth (src/auth/):** `client.ts` creates `NodeOAuthClient` — loopback client in dev, confidential client in production (requires `PRIVATE_KEYS` and `PUBLIC_URL`). `storage.ts` implements `SessionStore` and `StateStore` backed by SQLite.
 
-**Firehose Ingester (src/ingester.ts):** Subscribes to the AT Protocol relay firehose, filters for `com.treeappreciation.tree` and `com.treeappreciation.inscription` collections, validates records against lexicon schemas, and upserts/deletes from the local SQLite DB.
+**Firehose Ingester (src/ingester.ts):** Subscribes to the AT Protocol relay firehose, filters for `com.treeappreciation.tree` and `com.treeappreciation.inscription` collections, validates records against lexicon schemas, and upserts/deletes from the local SQLite DB. Decoding the full network firehose is CPU-heavy, so in production it runs as its **own process** (`src/ingester-runner.ts`, `npm run start:ingester`) rather than in the web process — this keeps the HTTP event loop responsive. The web process only runs it in-process when `FIREHOSE_ENABLED=true`. Both processes share the SQLite file safely via WAL mode + a busy timeout (configured in `src/db.ts`).
 
 **Lexicons (lexicons/):** JSON schema files defining custom AT Protocol record types. Run `npm run lexgen` after modifying these to regenerate `src/lexicon/` (types, validators, schema definitions). Custom schemas: `com.treeappreciation.tree`, `com.treeappreciation.inscription`.
 

@@ -11,5 +11,8 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/src/pages/public ./dist/pages/public
+COPY bin/start.sh ./bin/start.sh
 EXPOSE 8080
-CMD ["node", "dist/index.js"]
+# Runs both the web server and the firehose ingester as separate processes on
+# this machine so they share the SQLite volume. See bin/start.sh.
+CMD ["bash", "bin/start.sh"]

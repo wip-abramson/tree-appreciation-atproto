@@ -1,6 +1,7 @@
 import type { Tree, Inscription } from '#/db'
 import type { Echo } from '#/routes'
 import { imageUrl as buildImageUrl } from '#/lib/util'
+import { imageResizeScript } from './client-scripts'
 import { Shell } from './shell'
 
 type Props = {
@@ -71,6 +72,10 @@ document.querySelector('.inscription-form input[type="file"]').addEventListener(
     feedback.textContent = '';
   }
 });
+
+if (window.__attachImageResize) {
+  window.__attachImageResize(document.querySelector('.inscription-form'));
+}
 `
 
 const heroOrientationScript = `
@@ -409,6 +414,9 @@ export function TreeDetail({
               </label>
               <button type="submit">Inscribe</button>
             </form>
+            <script
+              dangerouslySetInnerHTML={{ __html: imageResizeScript }}
+            />
             <script
               dangerouslySetInnerHTML={{ __html: imagePreviewScript }}
             />

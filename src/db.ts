@@ -355,9 +355,27 @@ export const createDb = (location: string): Database => {
   if (location !== ':memory:') {
     mkdirSync(dirname(location), { recursive: true })
   }
+
+  const sqlite = new SqliteDb(location)
+
+  // Production-grade SQLite pragmas. These are essential for running the web
+  // server and the firehose ingester as separate processes against the same
+  // database file without hitting `SQLITE_BUSY` errors under load.
+  if (location !== ':memory:') {
+    // WAL lets many readers run concurrently with a single writer.
+    sqlite.pragma('journal_mode = WAL')
+  }
+  // Wait up to 5s for a competing writer instead of throwing immediately.
+  sqlite.pragma('busy_timeout = 5000')
+  // NORMAL is the recommended durability/perf trade-off when using WAL.
+  sqlite.pragma('synchronous = NORMAL')
+  sqlite.pragma('foreign_keys = ON')
+  // Cap the WAL size so it is checkpointed regularly under write bursts.
+  sqlite.pragma('wal_autocheckpoint = 1000')
+
   return new Kysely<DatabaseSchema>({
     dialect: new SqliteDialect({
-      database: new SqliteDb(location),
+      database: sqlite,
     }),
   })
 }

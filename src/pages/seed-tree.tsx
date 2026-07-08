@@ -1,3 +1,4 @@
+import { imageResizeScript } from './client-scripts'
 import { Shell } from './shell'
 
 type Props = {
@@ -135,6 +136,11 @@ const exifrScript = `
     }
   })
 
+  // --- Client-side downscale before upload ---
+  if (window.__attachImageResize) {
+    window.__attachImageResize(document.querySelector('.tree-form'))
+  }
+
   // --- Hide-location toggle ---
   hideCheckbox.addEventListener('change', function () {
     if (hideCheckbox.checked) {
@@ -267,6 +273,7 @@ export function SeedTree({ user }: Props) {
             </form>
           </div>
         </div>
+        <script dangerouslySetInnerHTML={{ __html: imageResizeScript }} />
         <script dangerouslySetInnerHTML={{ __html: exifrScript }} />
       </div>
     </Shell>

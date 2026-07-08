@@ -23,4 +23,9 @@ export const env = cleanEnv(process.env, {
   PLC_URL: url({ default: undefined }),
   FIREHOSE_URL: url({ default: undefined }),
   MOCK_WRITES: bool({ devDefault: true, default: false }),
+  // When true, the web process also runs the firehose ingester in-process.
+  // In production this should be false: run the ingester as its own process
+  // (`npm run start:ingester`) so heavy firehose decoding never blocks the
+  // HTTP event loop. Defaults to false everywhere for a smooth web tier.
+  FIREHOSE_ENABLED: bool({ default: false }),
 })
