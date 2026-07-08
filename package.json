@@ -14,6 +14,7 @@
     "start:ingester": "node dist/ingester-runner.js",
     "backfill": "tsx src/scripts/backfill.ts",
     "dedupe-trees": "tsx src/scripts/dedupe-trees.ts",
+    "migrate-to-pg": "tsx src/scripts/migrate-to-pg.ts",
     "lexgen": "lex gen-server ./src/lexicon ./lexicons/*",
     "clean": "rimraf dist coverage"
   },
@@ -35,6 +36,7 @@
     "kysely": "^0.27.4",
     "multer": "^2.0.2",
     "multiformats": "^9.9.0",
+    "pg": "^8.22.0",
     "pino": "^9.3.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -47,6 +49,7 @@
     "@types/better-sqlite3": "^7.6.11",
     "@types/express": "^4.17.21",
     "@types/multer": "^2.0.0",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "pino-pretty": "^11.0.0",

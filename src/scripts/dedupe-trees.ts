@@ -104,9 +104,11 @@ export async function dedupeTrees(
         .set({ tree: keep.uri })
         .where('tree', '=', dup.uri)
         .execute()
-      // OR IGNORE so an actor that followed both presences doesn't collide on
-      // the (actorId, treeSlug) unique index; any leftover is dropped after.
-      await sql`UPDATE OR IGNORE follower SET "treeSlug" = ${keep.slug} WHERE "treeSlug" = ${dup.slug}`.execute(
+      // Skip actors that already follow the keeper so we don't collide on the
+      // (actorId, treeSlug) unique index; any leftover is dropped after. Written
+      // as NOT EXISTS (rather than SQLite's UPDATE OR IGNORE) so it runs on both
+      // SQLite and Postgres.
+      await sql`UPDATE follower SET "treeSlug" = ${keep.slug} WHERE "treeSlug" = ${dup.slug} AND NOT EXISTS (SELECT 1 FROM follower f2 WHERE f2."actorId" = follower."actorId" AND f2."treeSlug" = ${keep.slug})`.execute(
         db,
       )
       await db
