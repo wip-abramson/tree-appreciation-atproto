@@ -4,12 +4,41 @@ import {
   atprotoLoopbackClientMetadata,
   NodeOAuthClient,
   OAuthClientMetadataInput,
+  RuntimeLock,
 } from '@atproto/oauth-client-node'
 import assert from 'node:assert'
 
 import type { Database } from '#/db'
 import { env } from '#/env'
 import { SessionStore, StateStore } from './storage'
+
+/**
+ * An in-process, per-key mutex used to serialize OAuth token operations.
+ *
+ * atproto refresh tokens are single-use, so two concurrent requests that both
+ * try to refresh the same session would race — one succeeds and the other's
+ * refresh gets rejected, revoking the credentials and logging the user out.
+ * Passing this explicitly also silences the "No lock mechanism provided"
+ * warning. Note: this only coordinates within a single process. If you scale
+ * the web tier to multiple instances, replace this with a shared lock (e.g.
+ * backed by the database) so refreshes are serialized across instances too.
+ */
+function createInProcessLock(): RuntimeLock {
+  const tails = new Map<string, Promise<unknown>>()
+  return <T>(name: string, fn: () => T | PromiseLike<T>): Promise<T> => {
+    const prev = tails.get(name) ?? Promise.resolve()
+    const run = prev.then(fn, fn) as Promise<T>
+    const tail = run.then(
+      () => {},
+      () => {},
+    )
+    tails.set(name, tail)
+    tail.finally(() => {
+      if (tails.get(name) === tail) tails.delete(name)
+    })
+    return run
+  }
+}
 
 export async function createOAuthClient(db: Database) {
   // Confidential client require a keyset accessible on the internet. Non
@@ -62,5 +91,6 @@ export async function createOAuthClient(db: Database) {
     sessionStore: new SessionStore(db),
     plcDirectoryUrl: env.PLC_URL,
     handleResolver: env.PDS_URL,
+    requestLock: createInProcessLock(),
   })
 }

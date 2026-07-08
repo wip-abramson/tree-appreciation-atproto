@@ -8,8 +8,10 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/index.ts | pino-pretty",
+    "dev:ingester": "tsx watch --clear-screen=false src/ingester-runner.ts | pino-pretty",
     "build": "tsup",
     "start": "node dist/index.js",
+    "start:ingester": "node dist/ingester-runner.js",
     "backfill": "tsx src/scripts/backfill.ts",
     "dedupe-trees": "tsx src/scripts/dedupe-trees.ts",
     "lexgen": "lex gen-server ./src/lexicon ./lexicons/*",

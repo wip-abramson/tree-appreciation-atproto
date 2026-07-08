@@ -297,40 +297,77 @@ const upload = multer({
   },
 })
 
+// Longest edge (px) we keep for stored images. Well above display needs while
+// keeping blobs small and fast to encode.
+const MAX_IMAGE_DIMENSION = 2048
+
+/**
+ * Normalize an uploaded image: apply EXIF orientation, strip all metadata,
+ * downscale to a sane maximum dimension, and encode a single JPEG under the
+ * AT Protocol blob size limit.
+ *
+ * Encodes in a single pass in the common case (metadata read is header-only);
+ * only steps quality down if the first encode is still over the limit.
+ */
 async function processImage(
   buffer: Buffer,
-  mimetype: string,
-): Promise<Buffer> {
-  // Apply EXIF orientation and strip all metadata
-  let pipeline = sharp(buffer).rotate()
+): Promise<{ data: Buffer; mimetype: string }> {
+  const meta = await sharp(buffer, { failOn: 'none' })
+    .metadata()
+    .catch(() => ({}) as sharp.Metadata)
+  const longestEdge = Math.max(meta.width ?? 0, meta.height ?? 0)
+  const targetWidth =
+    longestEdge > MAX_IMAGE_DIMENSION ? MAX_IMAGE_DIMENSION : undefined
 
-  // Downscale if the cleaned image would exceed the AT Protocol blob limit
-  let result = await pipeline.toBuffer()
-  if (result.byteLength > MAX_BLOB_SIZE) {
-    const metadata = await sharp(buffer).metadata()
-    const width = metadata.width ?? 2000
-    // Estimate scale factor needed, then apply with some margin
-    const scale = Math.sqrt(MAX_BLOB_SIZE / result.byteLength) * 0.9
-    const targetWidth = Math.round(width * scale)
-    pipeline = sharp(buffer).rotate().resize(targetWidth)
-    result = await pipeline.toBuffer()
-
-    // If still too large, compress more aggressively with JPEG
-    if (result.byteLength > MAX_BLOB_SIZE) {
-      result = await sharp(buffer)
-        .rotate()
-        .resize(targetWidth)
-        .jpeg({ quality: 70 })
-        .toBuffer()
+  const encode = (quality: number): Promise<Buffer> => {
+    let pipeline = sharp(buffer, { failOn: 'none' })
+      .rotate() // bake in EXIF orientation before metadata is stripped
+      .flatten({ background: '#ffffff' }) // drop alpha so JPEG isn't black
+    if (targetWidth) {
+      pipeline = pipeline.resize({ width: targetWidth, withoutEnlargement: true })
     }
+    return pipeline.jpeg({ quality, mozjpeg: true }).toBuffer()
   }
-  return result
+
+  let quality = 82
+  let data = await encode(quality)
+  // Bounded fallback: step quality down until under the blob limit.
+  while (data.byteLength > MAX_BLOB_SIZE && quality > 40) {
+    quality -= 15
+    data = await encode(quality)
+  }
+
+  return { data, mimetype: 'image/jpeg' }
 }
 
 // Max age, in seconds, for static routes and assets
 const MAX_AGE = env.NODE_ENV === 'production' ? 60 : 0
 
 type Session = { did?: string }
+
+// How long a login stays valid without any activity, in seconds. This is a
+// *sliding* window: it is renewed on every authenticated request (see
+// getSessionAgent), so an active user effectively stays logged in indefinitely
+// and only a genuinely idle session eventually expires.
+const SESSION_TTL = 60 * 60 * 24 * 30 // 30 days
+
+// Shared iron-session options for the `sid` cookie. Centralized so every call
+// site (read, callback, logout) uses identical settings — a mismatch here
+// silently invalidates cookies and logs users out.
+const sessionOptions = {
+  cookieName: 'sid',
+  password: env.COOKIE_SECRET,
+  ttl: SESSION_TTL,
+  cookieOptions: {
+    httpOnly: true,
+    sameSite: 'lax' as const,
+    path: '/',
+    // Only require HTTPS in production. In dev (http://localhost) a `secure`
+    // cookie would be dropped by the browser, logging you out immediately.
+    secure: env.NODE_ENV === 'production',
+    maxAge: SESSION_TTL,
+  },
+}
 
 // Helper function to get the Atproto Agent for the active session
 async function getSessionAgent(
@@ -340,10 +377,7 @@ async function getSessionAgent(
 ) {
   res.setHeader('Vary', 'Cookie')
 
-  const session = await getIronSession<Session>(req, res, {
-    cookieName: 'sid',
-    password: env.COOKIE_SECRET,
-  })
+  const session = await getIronSession<Session>(req, res, sessionOptions)
   if (!session.did) return null
 
   // This page is dynamic and should not be cached publicly
@@ -351,10 +385,23 @@ async function getSessionAgent(
 
   try {
     const oauthSession = await ctx.oauthClient.restore(session.did)
-    return oauthSession ? new Agent(oauthSession) : null
+    if (!oauthSession) return null
+    // Sliding renewal: re-issue the cookie so the 30-day idle window resets on
+    // every authenticated request. Active users never get unexpectedly logged
+    // out. Best-effort — a failure here must not break the request.
+    try {
+      await session.save()
+    } catch (err) {
+      ctx.logger.debug({ err }, 'session sliding-save failed')
+    }
+    return new Agent(oauthSession)
   } catch (err) {
-    ctx.logger.warn({ err }, 'oauth restore failed')
-    await session.destroy()
+    // A restore failure is often transient (a token refresh that raced or a
+    // brief PDS/network hiccup). Do NOT destroy the session here — doing so
+    // logs the user out on every such blip. Treat this request as logged-out
+    // and let the next request retry the restore. If the session is genuinely
+    // revoked the user simply logs in again.
+    ctx.logger.warn({ err }, 'oauth restore failed (treating request as logged-out)')
     return null
   }
 }
@@ -530,10 +577,7 @@ export const createRouter = (ctx: AppContext): RequestListener => {
       const params = new URLSearchParams(req.originalUrl.split('?')[1])
       try {
         // Load the session cookie
-        const session = await getIronSession<Session>(req, res, {
-          cookieName: 'sid',
-          password: env.COOKIE_SECRET,
-        })
+        const session = await getIronSession<Session>(req, res, sessionOptions)
 
         // If the user is already signed in, destroy the old credentials
         if (session.did) {
@@ -553,7 +597,18 @@ export const createRouter = (ctx: AppContext): RequestListener => {
 
         await session.save()
       } catch (err) {
+        // Surface the failure to the user instead of silently bouncing them
+        // back to the homepage still logged out (which is indistinguishable
+        // from "login didn't happen").
         ctx.logger.error({ err }, 'oauth callback failed')
+        const message =
+          err instanceof OAuthResolverError
+            ? err.message
+            : "We couldn't complete your login. Please try again."
+        return res
+          .status(400)
+          .type('html')
+          .send(page(<Login error={message} />))
       }
 
       return res.redirect('/')
@@ -637,10 +692,7 @@ export const createRouter = (ctx: AppContext): RequestListener => {
       // Never store this route
       res.setHeader('cache-control', 'no-store')
 
-      const session = await getIronSession<Session>(req, res, {
-        cookieName: 'sid',
-        password: env.COOKIE_SECRET,
-      })
+      const session = await getIronSession<Session>(req, res, sessionOptions)
 
       // Revoke credentials on the server
       if (session.did) {
@@ -1290,16 +1342,16 @@ export const createRouter = (ctx: AppContext): RequestListener => {
         }
 
         // Strip EXIF and downscale if needed
-        const cleaned = await processImage(req.file.buffer, req.file.mimetype)
+        const cleaned = await processImage(req.file.buffer)
 
         if (env.MOCK_WRITES) {
           ctx.logger.info('MOCK_WRITES: skipping uploadBlob for tree image')
           imageCid = `mock-${Date.now()}`
-          mockImageStore.set(imageCid, { data: cleaned, mime: req.file.mimetype })
+          mockImageStore.set(imageCid, { data: cleaned.data, mime: cleaned.mimetype })
         } else {
           // Upload clean image to the user's repo
-          const uploadRes = await agent.uploadBlob(cleaned, {
-            encoding: req.file.mimetype,
+          const uploadRes = await agent.uploadBlob(cleaned.data, {
+            encoding: cleaned.mimetype,
           })
           imageBlob = uploadRes.data.blob
           imageCid = uploadRes.data.blob.ref.toString()
@@ -1484,15 +1536,15 @@ export const createRouter = (ctx: AppContext): RequestListener => {
           ctx.logger.debug({ err }, 'no EXIF datetime found')
         }
 
-        const cleaned = await processImage(req.file.buffer, req.file.mimetype)
+        const cleaned = await processImage(req.file.buffer)
 
         if (env.MOCK_WRITES) {
           ctx.logger.info('MOCK_WRITES: skipping uploadBlob for inscription image')
           imageCid = `mock-${Date.now()}`
-          mockImageStore.set(imageCid, { data: cleaned, mime: req.file.mimetype })
+          mockImageStore.set(imageCid, { data: cleaned.data, mime: cleaned.mimetype })
         } else {
-          const uploadRes = await agent.uploadBlob(cleaned, {
-            encoding: req.file.mimetype,
+          const uploadRes = await agent.uploadBlob(cleaned.data, {
+            encoding: cleaned.mimetype,
           })
           imageBlob = uploadRes.data.blob
           imageCid = uploadRes.data.blob.ref.toString()

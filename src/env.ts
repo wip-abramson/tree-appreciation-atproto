@@ -26,4 +26,9 @@ export const env = cleanEnv(process.env, {
   // Force a network backfill on boot even when the index already has data.
   // By default the server only backfills when the index is empty.
   BACKFILL_ON_BOOT: bool({ default: false }),
+  // When true, the web process also runs the firehose ingester in-process.
+  // In production this should be false: run the ingester as its own process
+  // (`npm run start:ingester`) so heavy firehose decoding never blocks the
+  // HTTP event loop. Defaults to false everywhere for a smooth web tier.
+  FIREHOSE_ENABLED: bool({ default: false }),
 })

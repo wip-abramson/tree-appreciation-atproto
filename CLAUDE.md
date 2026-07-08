@@ -11,8 +11,10 @@ The app uses the `com.treeappreciation.*` namespace with two record types: `com.
 ## Commands
 
 - `npm run dev` — Start dev server with hot reload (tsx watch + pino-pretty), serves at http://localhost:8080
-- `npm run build` — Production build via tsup
+- `npm run dev:ingester` — Start the firehose ingester as a separate process (dev)
+- `npm run build` — Production build via tsup (builds both `index.js` and `ingester-runner.js`)
 - `npm start` — Run production build (`node dist/index.js`)
+- `npm run start:ingester` — Run the firehose ingester process (`node dist/ingester-runner.js`)
 - `npm run lexgen` — Regenerate TypeScript types from lexicon JSON schemas in `lexicons/` into `src/lexicon/`
 - `npm run backfill` — Index existing `com.treeappreciation.*` records from the live network (relay repo discovery + per-PDS `listRecords`). Use a persistent `DB_PATH`; the firehose only streams new events, so a fresh DB needs this to see the global data. The server also runs this automatically on boot **when the index is empty** (a fresh/lost persistent volume) — see Boot Sequence. The same logic compiles to `dist/scripts/backfill.js` for manual prod runs (`node dist/scripts/backfill.js`, e.g. via `fly ssh console`)
 - `npm run dedupe-trees` — One-off cleanup for duplicate tree presences (same author + same image CID, e.g. from a double submission). Keeps the earliest, re-points inscriptions/followers/inbox onto it, and durably deletes the duplicate record from the author's PDS repo via their stored OAuth session. Respects `DB_PATH`; pass `-- --dry-run` to report without changing anything. Builds to `dist/scripts/dedupe-trees.js` for prod
@@ -39,7 +41,7 @@ The app uses the `com.treeappreciation.*` namespace with two record types: `com.
 
 **AT Protocol OAuth (src/auth/):** `client.ts` creates `NodeOAuthClient` — loopback client in dev, confidential client in production (requires `PRIVATE_KEYS` and `PUBLIC_URL`). `storage.ts` implements `SessionStore` and `StateStore` backed by SQLite.
 
-**Firehose Ingester (src/ingester.ts):** Subscribes to the AT Protocol relay firehose, filters for `com.treeappreciation.tree` and `com.treeappreciation.inscription` collections, validates records against lexicon schemas, and upserts/deletes via the shared indexing logic in `src/indexing.ts` (also used by `src/scripts/backfill.ts`, which discovers repos via `com.atproto.sync.listReposByCollection` on the relay and pages through each repo's records).
+**Firehose Ingester (src/ingester.ts):** Subscribes to the AT Protocol relay firehose, filters for `com.treeappreciation.tree` and `com.treeappreciation.inscription` collections, validates records against lexicon schemas, and upserts/deletes via the shared indexing logic in `src/indexing.ts` (also used by `src/scripts/backfill.ts`, which discovers repos via `com.atproto.sync.listReposByCollection` on the relay and pages through each repo's records). Decoding the full network firehose is CPU-heavy, so in production it runs as its **own process** (`src/ingester-runner.ts`, `npm run start:ingester`) rather than in the web process — this keeps the HTTP event loop responsive. The web process only runs it in-process when `FIREHOSE_ENABLED=true`. Both processes share the SQLite file safely via WAL mode + a busy timeout (configured in `src/db.ts`).
 
 **Lexicons (lexicons/):** JSON schema files defining custom AT Protocol record types. Run `npm run lexgen` after modifying these to regenerate `src/lexicon/` (types, validators, schema definitions). Custom schemas: `com.treeappreciation.tree`, `com.treeappreciation.inscription`.
 

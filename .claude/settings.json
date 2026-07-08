@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build)",
+      "Bash(npm run dev)",
+      "Bash(npm run dev:ingester)",
+      "Bash(npm start)",
+      "Bash(npm run start:ingester)",
+      "Bash(npm run lexgen)",
+      "Bash(npm run clean)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(node dist/*)",
+      "Bash(curl http://localhost:*)"
+    ]
+  }
+}
