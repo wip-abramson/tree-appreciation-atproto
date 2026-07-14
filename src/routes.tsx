@@ -24,6 +24,13 @@ import { handler } from '#/lib/http'
 import { reverseGeocodePlace } from '#/lib/geocode'
 import { findUniqueSlug } from '#/lib/slug'
 import { newMockCid, readMockImage, saveMockImage } from '#/lib/mock-image-store'
+import {
+  MAX_TREE_NAME,
+  MAX_TREE_NAME_ECHO,
+  isNameError,
+  type NameError,
+  type TreeName,
+} from '#/lib/tree-name'
 import { ifString, imageUrl, treeLabel, upstreamImageUrl } from '#/lib/util'
 import { page } from '#/lib/view'
 import { Home } from '#/pages/home'
@@ -1026,15 +1033,40 @@ export const createRouter = (ctx: AppContext): RequestListener => {
         user = buildUserInfo(agent.assertDid, profile, didHandleMap)
       }
 
+      const currentDid = agent?.did ?? null
+
+      // One name today, from the steward who holds the tree record. Built as a
+      // list so that other stewards' names slot in without reshaping the page.
+      const names: TreeName[] = tree.name
+        ? [
+            {
+              name: tree.name,
+              handle: didHandleMap[tree.authorDid] || tree.authorDid,
+              did: tree.authorDid,
+              isYours: tree.authorDid === currentDid,
+            },
+          ]
+        : []
+
+      const rawError = req.query.nameError
+      const rawAttempt = req.query.nameAttempt
+
       res.type('html').send(
         page(
           <TreeDetail
             tree={tree}
             inscriptions={inscriptions}
             didHandleMap={didHandleMap}
-            currentDid={agent?.did ?? null}
+            currentDid={currentDid}
             user={user}
             echoes={echoes}
+            names={names}
+            nameError={isNameError(rawError) ? rawError : null}
+            nameAttempt={
+              typeof rawAttempt === 'string'
+                ? rawAttempt.slice(0, MAX_TREE_NAME_ECHO)
+                : null
+            }
           />,
         ),
       )
@@ -1554,6 +1586,116 @@ export const createRouter = (ctx: AppContext): RequestListener => {
       }
 
       return res.redirect(`/tree/${slug}`)
+    }),
+  )
+
+  // Offer, change, or remove a name for a tree.
+  //
+  // A name is one person's, never the tree's. Only the steward who seeded the
+  // tree holds its record, so only they can name it today; the page renders
+  // whatever they offer as "called X by @them", attributed. Submitting an empty
+  // name removes it. The tree's slug is never touched — a URL outlives a name.
+  router.post(
+    '/tree/:slug/name',
+    express.urlencoded({ extended: false }),
+    handler(async (req, res) => {
+      const slug = req.params.slug
+      const back = (error?: NameError, attempt?: string) => {
+        const params = new URLSearchParams()
+        if (error) params.set('nameError', error)
+        if (attempt) params.set('nameAttempt', attempt.slice(0, MAX_TREE_NAME_ECHO))
+        const query = params.toString()
+        return res.redirect(303, `/tree/${slug}${query ? `?${query}` : ''}`)
+      }
+
+      const agent = await getSessionAgent(req, res, ctx)
+      if (!agent) {
+        return res
+          .status(401)
+          .type('html')
+          .send('<h1>Error: Session required</h1>')
+      }
+
+      const tree = await ctx.db
+        .selectFrom('tree')
+        .selectAll()
+        .where('slug', '=', slug)
+        .executeTakeFirst()
+
+      if (!tree) {
+        return res.status(404).type('html').send('<h1>Tree not found</h1>')
+      }
+
+      if (tree.authorDid !== agent.assertDid) {
+        return res
+          .status(403)
+          .type('html')
+          .send('<h1>Error: Only the steward who seeded this tree can name it</h1>')
+      }
+
+      const raw = typeof req.body?.name === 'string' ? req.body.name : ''
+      const name = raw.trim()
+
+      // Someone who typed only whitespace meant to offer a name, not remove one.
+      if (raw.length > 0 && name.length === 0) return back('blank')
+      if (name.length > MAX_TREE_NAME) return back('too_long', raw)
+
+      const rkey = rkeyFromUri(tree.uri)
+
+      if (env.MOCK_WRITES) {
+        ctx.logger.info({ uri: tree.uri, name }, 'MOCK_WRITES: skipping putRecord for tree name')
+      } else {
+        // putRecord replaces the whole record, and the local row does not keep
+        // the image blob ref — only its CID. Re-putting a record built from the
+        // database would drop the photograph. Read the record we are amending.
+        try {
+          const existing = await agent.com.atproto.repo.getRecord({
+            repo: agent.assertDid,
+            collection: 'com.treeappreciation.tree',
+            rkey,
+          })
+
+          const record: Record<string, unknown> = {
+            ...(existing.data.value as Record<string, unknown>),
+            $type: 'com.treeappreciation.tree',
+          }
+          if (name) record.name = name
+          else delete record.name
+
+          if (!Tree.validateRecord(record).success) {
+            return back('save_failed')
+          }
+
+          await agent.com.atproto.repo.putRecord({
+            repo: agent.assertDid,
+            collection: 'com.treeappreciation.tree',
+            rkey,
+            record,
+            validate: false,
+            // Refuse the write if the record changed since we read it, rather
+            // than clobbering a concurrent edit with a stale photo.
+            swapRecord: existing.data.cid ?? undefined,
+          })
+        } catch (err) {
+          ctx.logger.warn({ err, uri: tree.uri }, 'failed to write tree name to PDS')
+          return back('save_failed')
+        }
+      }
+
+      try {
+        await ctx.db
+          .updateTable('tree')
+          .set({ name: name || null })
+          .where('uri', '=', tree.uri)
+          .execute()
+      } catch (err) {
+        ctx.logger.warn(
+          { err },
+          'failed to update computed view; ignoring as it should be caught by the firehose',
+        )
+      }
+
+      return back()
     }),
   )
 

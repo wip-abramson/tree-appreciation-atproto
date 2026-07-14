@@ -894,15 +894,20 @@ button:hover,
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.65));
 }
 
-.tree-hero-name {
+/*
+  Where the tree is — not what anyone calls it. This label grounds the photo
+  rather than titling it, so it sits well below the old name's 2.4rem shout.
+*/
+.tree-hero-place {
   font-family: 'Newsreader', Georgia, serif;
   color: #fff;
-  font-size: 2.4rem;
+  font-size: 1.35rem;
   font-weight: 400;
-  line-height: 1.15;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  line-height: 1.25;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
   max-width: 600px;
   margin: 0 auto;
+  text-wrap: balance;
 }
 
 /* No-image hero fallback */
@@ -914,8 +919,11 @@ button:hover,
   min-height: 180px;
 }
 
-.tree-hero--no-image .tree-hero-name {
+.tree-hero--no-image .tree-hero-place {
   text-align: center;
+  color: var(--bark-600);
+  text-shadow: none;
+  font-size: 1.8rem;
 }
 
 /* Zone 2: Presence info */
@@ -931,10 +939,15 @@ button:hover,
   color: var(--bark-600);
 }
 
+/*
+  A ledger of who did what at this tree: who named it, who first noticed it.
+  Stacked, not strung along a row, so each act reads as its own line.
+*/
 .tree-presence-meta {
   display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
   margin-top: 0.75rem;
   padding-top: 0.75rem;
   border-top: 1px solid var(--bark-200);
@@ -943,7 +956,9 @@ button:hover,
 .tree-meta-item {
   font-family: 'DM Mono', 'Courier New', monospace;
   font-size: 0.78rem;
-  color: var(--bark-400);
+  /* bark-400 on the page ground is 3.05:1 — under the 4.5:1 this text needs,
+     and this app is read outdoors in daylight. bark-500 is 5.96:1. */
+  color: var(--bark-500);
   letter-spacing: 0.02em;
 }
 
@@ -954,6 +969,236 @@ button:hover,
 
 .tree-meta-item a:hover {
   text-decoration: underline;
+}
+
+/* ============================================
+   Names offered for this tree
+   ============================================ */
+
+/*
+  Proximity does the grouping: a name's controls sit tight beneath it, and
+  names sit well apart from each other. With two namers, "rename / remove"
+  must obviously belong to the name above it and not to the name below.
+*/
+.tree-names {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+.tree-name {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  width: 100%;
+}
+
+/* Mono frame, serif name: the surrounding words recede, the name is the thing. */
+.tree-name-said {
+  font-family: 'DM Mono', 'Courier New', monospace;
+  font-size: 0.78rem;
+  color: var(--bark-500);
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+}
+
+.tree-name-text {
+  font-family: 'Newsreader', Georgia, serif;
+  font-size: 1.05rem;
+  font-weight: 400;
+  color: var(--bark-600);
+  letter-spacing: 0;
+}
+
+.tree-name-said a {
+  color: var(--green-500);
+  text-decoration: none;
+}
+
+.tree-name-said a:hover {
+  text-decoration: underline;
+}
+
+.tree-name-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.9rem;
+  width: 100%;
+}
+
+.tree-name-edit {
+  flex: 0 0 auto;
+}
+
+/* Opening the form gives it the whole line rather than a flex sliver. */
+.tree-name-edit[open] {
+  flex: 1 0 100%;
+}
+
+/*
+  While the name is being reconsidered, "remove" steps back: it would otherwise
+  be pushed below the open form and orphaned there, and offering a destructive
+  action mid-edit only competes with the one being taken. "Never mind" returns.
+*/
+.tree-name-edit[open] ~ .delete-form {
+  display: none;
+}
+
+.tree-naming {
+  width: 100%;
+}
+
+.tree-naming > summary,
+.tree-name-edit > summary {
+  display: inline-block;
+  list-style: none;
+  cursor: pointer;
+  font-family: 'DM Mono', 'Courier New', monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  color: var(--bark-500);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  border-radius: 4px;
+  /* Grow the touch target for a thumb without moving the text optically. */
+  padding: 0.45rem 0.3rem;
+  margin: -0.45rem -0.3rem;
+}
+
+.tree-naming > summary::-webkit-details-marker,
+.tree-name-edit > summary::-webkit-details-marker {
+  display: none;
+}
+
+.tree-naming > summary:hover,
+.tree-name-edit > summary:hover {
+  color: var(--bark-600);
+}
+
+.tree-naming > summary:focus-visible,
+.tree-name-edit > summary:focus-visible {
+  outline: 2px solid var(--green-500);
+  outline-offset: 1px;
+}
+
+/* The naming form */
+.name-form {
+  margin-top: 0.9rem;
+  max-width: 34rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.95rem 1rem 1.05rem;
+  background: var(--bark-100);
+  border-radius: 8px;
+}
+
+.name-label {
+  font-family: 'DM Mono', 'Courier New', monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  color: var(--bark-500);
+}
+
+.name-error {
+  font-size: 0.9rem;
+  color: var(--error-500);
+  line-height: 1.4;
+}
+
+.name-input {
+  font-family: 'Newsreader', Georgia, serif;
+  font-size: 1.05rem;
+  color: var(--bark-600);
+  background: #fff;
+  border: 1px solid var(--bark-300);
+  border-radius: 6px;
+  padding: 0.6rem 0.7rem;
+  min-height: 44px;
+  width: 100%;
+}
+
+.name-input:focus-visible {
+  outline: 2px solid var(--green-500);
+  outline-offset: 1px;
+  border-color: var(--green-500);
+}
+
+.name-input[aria-invalid='true'] {
+  border-color: var(--error-500);
+}
+
+.name-help {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--bark-500);
+  text-wrap: pretty;
+}
+
+.name-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin-top: 0.35rem;
+}
+
+.name-submit {
+  min-height: 44px;
+}
+
+.name-cancel {
+  background: none;
+  border: none;
+  color: var(--bark-500);
+  font-family: 'DM Mono', 'Courier New', monospace;
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  padding: 0.45rem 0.3rem;
+  margin: -0.45rem -0.3rem;
+  border-radius: 4px;
+}
+
+.name-cancel:hover {
+  background: none;
+  color: var(--bark-600);
+}
+
+.name-cancel:focus-visible {
+  outline: 2px solid var(--green-500);
+  outline-offset: 1px;
+}
+
+/*
+  The form is visible by default; this only softens its arrival. Nothing is
+  gated on the animation running, so a headless render still shows the form.
+*/
+.tree-naming[open] .name-form,
+.tree-name-edit[open] .name-form {
+  animation: name-form-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes name-form-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tree-naming[open] .name-form,
+  .tree-name-edit[open] .name-form {
+    animation: none;
+  }
 }
 
 /* Map */
@@ -1319,17 +1564,26 @@ button:hover,
 .delete-btn {
   background: none;
   border: none;
-  color: var(--bark-400);
+  /* bark-400 was 3.05:1 on the page ground; this text needs 4.5:1. */
+  color: var(--bark-500);
   font-size: 0.75rem;
-  padding: 0;
+  padding: 0.45rem 0.3rem;
+  margin: -0.45rem -0.3rem;
   cursor: pointer;
   text-decoration: underline;
+  text-underline-offset: 3px;
   font-weight: 400;
+  border-radius: 4px;
 }
 
 .delete-btn:hover {
   color: var(--error-500);
   background: none;
+}
+
+.delete-btn:focus-visible {
+  outline: 2px solid var(--green-500);
+  outline-offset: 1px;
 }
 
 /* ============================================

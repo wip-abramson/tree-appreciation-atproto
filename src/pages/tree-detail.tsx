@@ -1,6 +1,12 @@
 import type { Tree, Inscription } from '#/db'
 import type { Echo } from '#/routes'
-import { imageUrl as buildImageUrl, treeLabel } from '#/lib/util'
+import { imageUrl as buildImageUrl, treeGrounding, treeLabel } from '#/lib/util'
+import {
+  MAX_TREE_NAME,
+  nameErrorMessage,
+  type NameError,
+  type TreeName,
+} from '#/lib/tree-name'
 import { imageResizeScript } from './client-scripts'
 import { Shell } from './shell'
 
@@ -11,6 +17,11 @@ type Props = {
   currentDid: string | null
   user?: { did: string; displayName?: string; handle?: string; avatarUrl?: string }
   echoes?: Echo[]
+  /** Names people have offered for this tree. At most one, for now. */
+  names?: TreeName[]
+  nameError?: NameError | null
+  /** A rejected name, handed back so the form doesn't lose the steward's words. */
+  nameAttempt?: string | null
 }
 
 function stripHtml(html: string): string {
@@ -247,6 +258,90 @@ function LapseFrame({ moment, active }: { moment: Moment; active: boolean }) {
   )
 }
 
+/**
+ * The naming form, shared by "give this tree a name" and "rename". Only one is
+ * ever rendered at a time, so the ids inside are unique on the page.
+ */
+function NameForm({
+  slug,
+  defaultValue,
+  error,
+}: {
+  slug: string
+  defaultValue: string
+  error: NameError | null
+}) {
+  return (
+    <form action={`/tree/${slug}/name`} method="post" className="name-form">
+      <label className="name-label" htmlFor="tree-name-input">
+        A name, if one has arrived
+      </label>
+      {error ? (
+        <p className="name-error" id="tree-name-error" role="alert">
+          {nameErrorMessage(error)}
+        </p>
+      ) : null}
+      <input
+        id="tree-name-input"
+        className="name-input"
+        type="text"
+        name="name"
+        defaultValue={defaultValue}
+        maxLength={MAX_TREE_NAME}
+        autoComplete="off"
+        spellCheck={false}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={
+          error ? 'tree-name-error tree-name-help' : 'tree-name-help'
+        }
+      />
+      <p className="name-help" id="tree-name-help">
+        Names are personal. Yours will appear beside your name, not as the
+        tree&rsquo;s own.
+      </p>
+      <div className="name-actions">
+        <button type="submit" className="name-submit">
+          Offer this name
+        </button>
+        {/* Revealed by script: without JS it could not close anything. */}
+        <button type="button" className="name-cancel" hidden>
+          Never mind
+        </button>
+      </div>
+    </form>
+  )
+}
+
+const namingScript = `
+(function() {
+  var panels = document.querySelectorAll('.tree-naming, .tree-name-edit');
+  Array.prototype.forEach.call(panels, function(panel) {
+    var input = panel.querySelector('.name-input');
+    var cancel = panel.querySelector('.name-cancel');
+
+    if (cancel) {
+      cancel.hidden = false;
+      cancel.addEventListener('click', function() {
+        panel.open = false;
+        var summary = panel.querySelector('summary');
+        if (summary) summary.focus();
+      });
+    }
+
+    panel.addEventListener('toggle', function() {
+      if (panel.open && input) input.focus();
+    });
+
+    // Open on arrival means the last name was refused. Put the cursor where
+    // the steward left off, after their own words.
+    if (panel.open && input) {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
+  });
+})();
+`
+
 const headContent = (
   <>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -320,9 +415,23 @@ export function TreeDetail({
   currentDid,
   user,
   echoes = [],
+  names = [],
+  nameError = null,
+  nameAttempt = null,
 }: Props) {
   const authorHandle = didHandleMap[tree.authorDid] || tree.authorDid
-  const label = treeLabel(tree)
+
+  // Over the photograph: only where the tree is. A person's name for it is
+  // shown further down, beside the person, never as the tree's own title.
+  const grounding = treeGrounding(tree)
+  // For the browser tab, where a name is just how you find the thing again.
+  const title = treeLabel(tree) ?? 'A tree'
+
+  // Only the steward holding the tree record can name it. Their own name, if
+  // they have offered one, is the one they can change.
+  const canName = currentDid !== null && tree.authorDid === currentDid
+  const yourName = names.find((n) => n.isYours) ?? null
+
   const imageUrl = tree.imageCid
     ? buildImageUrl(tree.authorDid, tree.imageCid)
     : null
@@ -335,7 +444,7 @@ export function TreeDetail({
   const wordsLeft = inscriptions.filter((i) => !i.imageCid && i.text)
 
   return (
-    <Shell title={label ?? 'A tree'} headContent={headContent} user={user}>
+    <Shell title={title} headContent={headContent} user={user}>
       {/* Site header — compact on detail page */}
       <div className="tree-detail-header">
         <h1>
@@ -343,7 +452,7 @@ export function TreeDetail({
         </h1>
       </div>
 
-      {/* Zone 1: Hero */}
+      {/* Zone 1: Hero. The photo is the identity; only place labels it. */}
       {imageUrl ? (
         <div className="tree-hero">
           <img
@@ -352,16 +461,20 @@ export function TreeDetail({
             alt=""
             aria-hidden="true"
           />
-          <img className="tree-hero-img" src={imageUrl} alt={label ?? 'A tree'} />
-          {label ? (
+          <img
+            className="tree-hero-img"
+            src={imageUrl}
+            alt={grounding ? `A tree ${grounding}` : 'A tree'}
+          />
+          {grounding ? (
             <div className="tree-hero-overlay">
-              <h2 className="tree-hero-name">{label}</h2>
+              <h2 className="tree-hero-place">{grounding}</h2>
             </div>
           ) : null}
         </div>
       ) : (
         <div className="tree-hero tree-hero--no-image">
-          <h2 className="tree-hero-name">{label ?? 'A tree'}</h2>
+          <h2 className="tree-hero-place">{title}</h2>
         </div>
       )}
 
@@ -370,13 +483,71 @@ export function TreeDetail({
         {tree.description ? (
           <p className="tree-presence-description">{tree.description}</p>
         ) : null}
+        {/*
+          A ledger of the human acts at this tree. A name sits here, next to the
+          person who offered it — not over the photograph, where it would read
+          as the tree's own. It is a list because names are personal, and one
+          day this tree may be called different things by different people.
+        */}
         <div className="tree-presence-meta">
+          {names.length > 0 ? (
+            <ul className="tree-names">
+              {names.map((offered) => (
+                <li key={offered.did} className="tree-name">
+                  <span className="tree-name-said">
+                    called <b className="tree-name-text">{offered.name}</b> by{' '}
+                    <a href={`https://bsky.app/profile/${offered.handle}`}>
+                      @{offered.handle}
+                    </a>
+                  </span>
+                  {offered.isYours ? (
+                    <span className="tree-name-controls">
+                      <details
+                        className="tree-name-edit"
+                        open={nameError !== null}
+                      >
+                        <summary>rename</summary>
+                        <NameForm
+                          slug={tree.slug}
+                          defaultValue={nameAttempt ?? offered.name}
+                          error={nameError}
+                        />
+                      </details>
+                      <form
+                        action={`/tree/${tree.slug}/name`}
+                        method="post"
+                        className="delete-form"
+                        data-confirm="Remove this name?"
+                      >
+                        <input type="hidden" name="name" value="" />
+                        <button type="submit" className="delete-btn">
+                          remove
+                        </button>
+                      </form>
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
           <span className="tree-meta-item">
             first noticed {formatDate(tree.createdAt)} by{' '}
             <a href={`https://bsky.app/profile/${authorHandle}`}>
               @{authorHandle}
             </a>
           </span>
+
+          {canName && !yourName ? (
+            <details className="tree-naming" open={nameError !== null}>
+              <summary>give this tree a name</summary>
+              <NameForm
+                slug={tree.slug}
+                defaultValue={nameAttempt ?? ''}
+                error={nameError}
+              />
+            </details>
+          ) : null}
         </div>
         {tree.latitude && tree.longitude ? (
           <>
@@ -522,6 +693,9 @@ export function TreeDetail({
         </div>
       ) : null}
 
+      <script
+        dangerouslySetInnerHTML={{ __html: namingScript }}
+      />
       <script
         dangerouslySetInnerHTML={{ __html: heroOrientationScript }}
       />

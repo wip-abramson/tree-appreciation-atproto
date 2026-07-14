@@ -1,7 +1,8 @@
 import type { Database } from '#/db'
 import * as Tree from '#/lexicon/types/com/treeappreciation/tree'
 import * as Inscription from '#/lexicon/types/com/treeappreciation/inscription'
-import { slugify, findUniqueSlug } from '#/lib/slug'
+import { findUniqueSlug } from '#/lib/slug'
+import { legacySlugForUri } from '#/lib/legacy-slugs'
 import { upstreamImageUrl } from '#/lib/util'
 
 /**
@@ -63,8 +64,12 @@ export async function indexTree(
     }
   }
 
-  // Named (legacy) trees get name-based slugs; nameless trees use the rkey
-  const baseSlug = record.name ? slugify(record.name) : rkeyFromUri(uri)
+  // A slug must never depend on `name`: a name can be offered, changed, or
+  // removed at any time, and a tree's URL must outlive all of that. Pre-revamp
+  // trees keep their pinned name-derived slugs; everything else is keyed by the
+  // immutable rkey. (Slug is only ever set on insert — the upsert below leaves
+  // it alone — but a fresh backfill re-inserts, so this must be deterministic.)
+  const baseSlug = legacySlugForUri(uri) ?? rkeyFromUri(uri)
   const slug = await findUniqueSlug(db, baseSlug, uri)
 
   await db
